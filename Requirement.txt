@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+aiosqlite
+sqlalchemy
+pydantic
+pydantic-settings
+qrcode
+pillow
