@@ -1197,6 +1197,28 @@ header {
     }
 }
 
+
+
+/* Timeline Consultation Actions (Edit Button) */
+.timeline-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+}
+
+.btn-sm {
+    padding: 6px 14px !important;
+    font-size: 0.8rem !important;
+    gap: 5px;
+}
+
+.btn-sm svg {
+    width: 14px;
+    height: 14px;
+}
+
 /* Responsive styles */
 @media (max-width: 1024px) {
     .history-layout {

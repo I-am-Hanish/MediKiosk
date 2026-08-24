@@ -30,6 +30,16 @@ class ConsultationCreate(BaseModel):
     treatment: str = Field(..., min_length=1)
     notes: Optional[str] = ""
 
+class ConsultationUpdate(BaseModel):
+    date: str = Field(..., min_length=1)
+    doctor_name: str = Field(..., min_length=1)
+    specialization: str = Field(..., min_length=1)
+    hospital_name: str = Field(..., min_length=1)
+    symptoms: str = Field(..., min_length=1)
+    diagnosis: str = Field(..., min_length=1)
+    treatment: str = Field(..., min_length=1)
+    notes: Optional[str] = ""
+
 @router.get("/")
 async def patient_home():
     return {"message": "Patient API is working"}
@@ -109,15 +119,6 @@ async def search_patient(id: str = Query(...), db: AsyncSession = Depends(get_db
         "summary": patient.summary
     }
 
-@router.get("/latest")
-async def get_latest_patient(db: AsyncSession = Depends(get_db)):
-    # Retrieve most recently created patient
-    result = await db.execute(select(Patient).order_by(Patient.created_at.desc()))
-    patient = result.scalars().first()
-    if not patient:
-        raise HTTPException(status_code=404, detail="No patients registered yet.")
-    return {"id": patient.id}
-
 @router.get("/{patient_id}/history")
 async def get_patient_history(patient_id: str, db: AsyncSession = Depends(get_db)):
     patient = await db.get(Patient, patient_id.strip().upper())
@@ -135,6 +136,7 @@ async def get_patient_history(patient_id: str, db: AsyncSession = Depends(get_db
     history = []
     for c in consultations:
         history.append({
+            "id": c.id,
             "date": c.date,
             "doctor": f"{c.doctor_name} ({c.specialization})",
             "doctor_name": c.doctor_name,
@@ -180,47 +182,85 @@ async def add_consultation(data: ConsultationCreate, db: AsyncSession = Depends(
     db.add(new_consult)
 
     try:
-        # Fetch all consultations to synthesize Smart Case Summary
-        result = await db.execute(
-            select(Consultation)
-            .where(Consultation.patient_id == patient.id)
-        )
-        all_consults = result.scalars().all()
-        # Include current consult
-        all_consults.append(new_consult)
-        
-        # Sort consultations by date desc (latest first)
-        all_consults.sort(key=lambda x: (x.date, x.created_at or datetime.min), reverse=True)
-        
-        # Compile dynamic summary info
-        num_consults = len(all_consults)
-        latest = all_consults[0]
-        
-        # Gather unique doctors
-        unique_docs = []
-        for c in all_consults:
-            doc_str = f"{c.doctor_name} ({c.specialization})"
-            if doc_str not in unique_docs:
-                unique_docs.append(doc_str)
-                
-        prev_doctors_str = ", ".join(unique_docs[:3]) # Limit to top 3
+        await db.commit()
 
-        # Formulate description
-        summary_text = (
-            f"Active summary: {num_consults} consultation(s) recorded. "
-            f"Latest diagnosis: '{latest.diagnosis}' on {latest.date} by {latest.doctor_name}. "
-            f"Primary treatment: '{latest.treatment}'. "
-            f"Attending doctors: {prev_doctors_str}. "
-            f"Reported symptoms include: {latest.symptoms}."
-        )
-
-        patient.summary = summary_text
+        # Regenerate smart summary from all consultations (queried after commit)
+        patient.summary = await _generate_smart_summary(db, patient.id)
         await db.commit()
         
         return {
             "status": "success",
-            "summary": summary_text
+            "summary": patient.summary
         }
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Database error during consultation save: {str(e)}")
+
+@router.put("/consultation/{consultation_id}")
+async def update_consultation(consultation_id: int, data: ConsultationUpdate, db: AsyncSession = Depends(get_db)):
+    """Update an existing consultation in-place (no duplicate creation)."""
+    consult = await db.get(Consultation, consultation_id)
+    if not consult:
+        raise HTTPException(status_code=404, detail="Consultation not found.")
+
+    # Update fields
+    consult.date = data.date
+    consult.doctor_name = data.doctor_name
+    consult.specialization = data.specialization
+    consult.hospital_name = data.hospital_name
+    consult.symptoms = data.symptoms
+    consult.diagnosis = data.diagnosis
+    consult.treatment = data.treatment
+    consult.notes = data.notes or ""
+
+    try:
+        await db.commit()
+
+        # Regenerate smart summary from all consultations
+        patient = await db.get(Patient, consult.patient_id)
+        if patient:
+            patient.summary = await _generate_smart_summary(db, patient.id)
+            await db.commit()
+
+        return {
+            "status": "success",
+            "summary": patient.summary if patient else ""
+        }
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error during consultation update: {str(e)}")
+
+
+async def _generate_smart_summary(db: AsyncSession, patient_id: str) -> str:
+    """Generate a smart case summary from all saved consultations for a patient."""
+    result = await db.execute(
+        select(Consultation)
+        .where(Consultation.patient_id == patient_id)
+        .order_by(Consultation.date.desc(), Consultation.created_at.desc())
+    )
+    all_consults = result.scalars().all()
+
+    if not all_consults:
+        return "No consultation history available yet."
+
+    num_consults = len(all_consults)
+    latest = all_consults[0]
+
+    # Gather unique doctors
+    unique_docs = []
+    for c in all_consults:
+        doc_str = f"{c.doctor_name} ({c.specialization})"
+        if doc_str not in unique_docs:
+            unique_docs.append(doc_str)
+
+    prev_doctors_str = ", ".join(unique_docs[:3])  # Limit to top 3
+
+    summary_text = (
+        f"Active summary: {num_consults} consultation(s) recorded. "
+        f"Latest diagnosis: '{latest.diagnosis}' on {latest.date} by {latest.doctor_name}. "
+        f"Primary treatment: '{latest.treatment}'. "
+        f"Attending doctors: {prev_doctors_str}. "
+        f"Reported symptoms include: {latest.symptoms}."
+    )
+
+    return summary_text

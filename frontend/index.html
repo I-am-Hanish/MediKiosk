@@ -312,7 +312,7 @@
         <section id="screen-consultation" class="screen">
             <div class="card">
                 <div class="card-header-accent"></div>
-                <h3 class="card-title">
+                <h3 class="card-title" id="consultation-form-title">
                     <i data-lucide="file-signature"></i>
                     New Clinical Consultation
                 </h3>
@@ -363,7 +363,7 @@
                         </div>
                     </div>
                     <div class="btn-group">
-                        <button type="submit" class="btn btn-primary">
+                        <button type="submit" class="btn btn-primary" id="consultation-save-btn">
                             <i data-lucide="save"></i>
                             Save Consultation
                         </button>
@@ -376,7 +376,7 @@
         </section>
     </main>
 
-    <!-- Simulated QR Scanner Modal -->
+    <!-- QR Scanner Modal -->
     <div id="scanner-modal" class="modal-overlay">
         <div class="scanner-modal">
             <div class="scanner-header">
@@ -386,19 +386,26 @@
                 </button>
             </div>
             <div class="scanner-viewfinder">
+                <video id="scanner-video" playsinline autoplay muted style="width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; display: none;"></video>
                 <div class="scanner-corner corner-tl"></div>
                 <div class="scanner-corner corner-tr"></div>
                 <div class="scanner-corner corner-bl"></div>
                 <div class="scanner-corner corner-br"></div>
                 <div class="scanner-laser"></div>
-                <i data-lucide="aperture" class="scanner-camera-icon"></i>
+                <i data-lucide="aperture" class="scanner-camera-icon" id="scanner-camera-icon"></i>
             </div>
-            <div class="scanner-status scanning" id="scanner-status">
-                Simulating camera connection...
+            <div class="scanner-status" id="scanner-status">
+                Initializing camera feed...
             </div>
-            <p style="font-size: 0.8rem; color: var(--text-muted); text-align: center; max-width: 320px;">
-                Align the patient card QR code inside the viewfinder window.
-            </p>
+            <div class="scanner-manual-entry" style="width: 100%; margin-top: 10px;">
+                <p style="font-size: 0.8rem; color: var(--text-muted); text-align: center; margin-bottom: 8px;">
+                    Align QR code in viewfinder or enter Patient ID manually:
+                </p>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="scanner-manual-id" placeholder="e.g. MK-2026-1005" style="flex: 1; padding: 9px 12px; border: 1.5px solid var(--border-color); border-radius: var(--border-radius-sm); font-size: 0.85rem; font-family: var(--font-body); background: var(--bg-card); color: var(--text-main);" onkeypress="handleScannerKeypress(event)">
+                    <button type="button" class="btn btn-primary btn-sm" onclick="submitScannerManualId()">Search</button>
+                </div>
+            </div>
         </div>
     </div>
 

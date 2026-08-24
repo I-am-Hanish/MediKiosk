@@ -19,7 +19,16 @@ async def init_db():
     async with engine.begin() as conn:
         # Import models inside function to prevent circular import issues
         from app.database import models
+        from sqlalchemy import delete
         await conn.run_sync(Base.metadata.create_all)
+        # Ensure demo seed records are purged from database
+        demo_ids = ['MK-2026-1001', 'MK-2026-1002', 'MK-2026-1003', 'MK-2026-1004']
+        await conn.execute(
+            delete(models.Consultation).where(models.Consultation.patient_id.in_(demo_ids))
+        )
+        await conn.execute(
+            delete(models.Patient).where(models.Patient.id.in_(demo_ids))
+        )
     print("Database initialized & SQLite tables created.")
 
 # Dependency to provide db sessions

@@ -36,19 +36,6 @@ async function apiSearchPatient(patientId) {
 }
 
 /**
- * Fetches the latest registered patient from the database (for QR simulation).
- * @returns {Promise<Object>} { id } of the latest patient
- */
-async function apiGetLatestPatient() {
-    const response = await fetch('/api/patient/latest');
-    if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.detail || "No patients registered yet.");
-    }
-    return await response.json();
-}
-
-/**
  * Fetches the demographic and chronological consultation history for a patient.
  * @param {string} patientId - The patient ID
  * @returns {Promise<Object>} { patient, consultations }
@@ -78,6 +65,27 @@ async function apiAddConsultation(consultationData) {
     if (!response.ok) {
         const err = await response.json();
         throw new Error(err.detail || "Failed to save consultation.");
+    }
+    return await response.json();
+}
+
+/**
+ * Updates an existing consultation record in-place (no duplicate creation).
+ * @param {number} consultationId - The consultation ID to update
+ * @param {Object} consultationData - { date, doctor_name, specialization, hospital_name, symptoms, diagnosis, treatment, notes }
+ * @returns {Promise<Object>} The response containing the updated smart summary
+ */
+async function apiUpdateConsultation(consultationId, consultationData) {
+    const response = await fetch(`/api/patient/consultation/${consultationId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(consultationData)
+    });
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || "Failed to update consultation.");
     }
     return await response.json();
 }

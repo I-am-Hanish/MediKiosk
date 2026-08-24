@@ -4,6 +4,7 @@
 // Active state
 let activePatient = null;
 let currentScreen = 'screen-registration';
+let editingConsultationId = null; // Tracks if we are editing an existing consultation
 
 // Page Title & Subtitle Mapping
 const SCREEN_TITLES = {
@@ -133,7 +134,7 @@ async function handleRegistration(event) {
         // Update UI elements
         document.getElementById('success-patient-id').innerText = registeredPatient.id;
         
-        // Generate QR Code URL
+        // Generate QR Code URL — QR contains only the real Patient ID
         const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${registeredPatient.id}`;
         document.getElementById('success-qr-code').src = qrCodeUrl;
 
@@ -247,51 +248,136 @@ async function searchPatient() {
     }
 }
 
-// Simulated Camera Scanner Overlay
-function openScanner() {
+// QR Scanner state
+let scannerStream = null;
+let scannerScanInterval = null;
+
+// QR Scanner Handler
+async function openScanner() {
     const modal = document.getElementById('scanner-modal');
     const statusText = document.getElementById('scanner-status');
-    
+    const manualInput = document.getElementById('scanner-manual-id');
+    const video = document.getElementById('scanner-video');
+    const icon = document.getElementById('scanner-camera-icon');
+
+    // Clear previous search/patient input so previous patient is never re-used
+    document.getElementById('dashboard-search-id').value = '';
+    if (manualInput) {
+        manualInput.value = '';
+    }
+
     modal.classList.add('modal-active');
-    statusText.innerText = "Connecting camera feed...";
+    statusText.innerText = "Requesting camera access...";
     statusText.className = "scanner-status scanning";
 
-    // Step 1: Simulate connection
-    setTimeout(() => {
-        statusText.innerText = "Positioning viewfinder... Reading scanner feed.";
-        
-        // Step 2: Simulate scanning
-        setTimeout(() => {
-            statusText.innerText = "Scanning QR Code... Please hold card steady.";
-            
-            // Step 3: Fetch latest patient from live database dynamically!
-            setTimeout(async () => {
+    // Attempt actual camera scanning if available
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        try {
+            scannerStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+            if (video) {
+                video.srcObject = scannerStream;
+                video.style.display = "block";
+                if (icon) icon.style.display = "none";
+                await video.play();
+                statusText.innerText = "Scanning QR Code... Hold patient card steady.";
+                statusText.className = "scanner-status scanning";
+                startQrVideoScanning(video);
+            }
+        } catch (err) {
+            console.log("Camera feed not accessible:", err);
+            if (video) video.style.display = "none";
+            if (icon) icon.style.display = "block";
+            statusText.innerText = "Camera not available. Enter Patient ID below:";
+            statusText.className = "scanner-status";
+        }
+    } else {
+        if (video) video.style.display = "none";
+        if (icon) icon.style.display = "block";
+        statusText.innerText = "Camera not available. Enter Patient ID below:";
+        statusText.className = "scanner-status";
+    }
+
+    lucide.createIcons();
+}
+
+function startQrVideoScanning(video) {
+    if ('BarcodeDetector' in window) {
+        try {
+            const detector = new BarcodeDetector({ formats: ['qr_code'] });
+            scannerScanInterval = setInterval(async () => {
+                if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) return;
                 try {
-                    const latest = await apiGetLatestPatient();
-                    statusText.innerText = `Success! Scanned ID (${latest.id})`;
-                    statusText.className = "scanner-status success";
-                    
-                    // Step 4: Load scanned patient
-                    setTimeout(() => {
-                        closeScanner();
-                        document.getElementById('dashboard-search-id').value = latest.id;
-                        searchPatient();
-                    }, 1000);
-                } catch (err) {
-                    statusText.innerText = "Scanner Error: No registered patients found in system.";
-                    statusText.className = "scanner-status error";
-                    setTimeout(() => {
-                        closeScanner();
-                        showToast("Please register a patient first before using the scanner.", "danger");
-                    }, 2000);
+                    const barcodes = await detector.detect(video);
+                    if (barcodes.length > 0) {
+                        const rawValue = barcodes[0].rawValue.trim();
+                        if (rawValue) {
+                            stopScanner();
+                            onQrCodeScanned(rawValue);
+                        }
+                    }
+                } catch (e) {
+                    console.error("Barcode detection error:", e);
                 }
-            }, 1200);
-        }, 1000);
-    }, 800);
+            }, 300);
+        } catch (err) {
+            console.log("BarcodeDetector initialization failed:", err);
+        }
+    }
+}
+
+function onQrCodeScanned(scannedText) {
+    closeScanner();
+    let patientId = scannedText.trim();
+    if (patientId.includes('?id=')) {
+        const match = patientId.match(/[?&]id=([^&]+)/);
+        if (match) patientId = decodeURIComponent(match[1]);
+    }
+    document.getElementById('dashboard-search-id').value = patientId;
+    searchPatient();
+}
+
+function submitScannerManualId() {
+    const manualInput = document.getElementById('scanner-manual-id');
+    const patientId = manualInput ? manualInput.value.trim() : '';
+    if (!patientId) {
+        showToast("Please enter a Patient ID.", "danger");
+        return;
+    }
+    closeScanner();
+    document.getElementById('dashboard-search-id').value = patientId;
+    searchPatient();
+}
+
+function handleScannerKeypress(event) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        submitScannerManualId();
+    }
 }
 
 function closeScanner() {
+    stopScanner();
     document.getElementById('scanner-modal').classList.remove('modal-active');
+}
+
+function stopScanner() {
+    if (scannerScanInterval) {
+        clearInterval(scannerScanInterval);
+        scannerScanInterval = null;
+    }
+    if (scannerStream) {
+        scannerStream.getTracks().forEach(track => track.stop());
+        scannerStream = null;
+    }
+    const video = document.getElementById('scanner-video');
+    if (video) {
+        video.srcObject = null;
+        video.style.display = "none";
+    }
+    const icon = document.getElementById('scanner-camera-icon');
+    if (icon) {
+        icon.style.display = "block";
+    }
 }
 
 // Screen 3: Patient Case History Renderer
@@ -355,7 +441,7 @@ async function renderCaseHistory() {
             return;
         }
 
-        // Render database entries
+        // Render database entries with Edit buttons
         consultations.forEach(consult => {
             const item = document.createElement('div');
             item.className = 'timeline-item';
@@ -398,6 +484,13 @@ async function renderCaseHistory() {
                         <span class="flow-arrow"><i data-lucide="chevron-right" style="width:10px; height:10px;"></i></span>
                         <span class="flow-step treat">Treat: ${truncateText(consult.treatment, 15)}</span>
                     </div>
+
+                    <div class="timeline-actions">
+                        <button class="btn btn-outline btn-sm" onclick="startEditConsultation(${consult.id}, this)" title="Edit this consultation">
+                            <i data-lucide="pencil"></i>
+                            Edit
+                        </button>
+                    </div>
                 </div>
             `;
             timelineContainer.appendChild(item);
@@ -409,6 +502,55 @@ async function renderCaseHistory() {
     }
 }
 
+// Edit Consultation — loads data into the consultation form in edit mode
+async function startEditConsultation(consultationId, btnElement) {
+    if (!activePatient) return;
+
+    try {
+        // Get fresh history data to find the consultation
+        const data = await apiGetPatientHistory(activePatient.id);
+        const consult = data.consultations.find(c => c.id === consultationId);
+
+        if (!consult) {
+            showToast("Consultation not found.", "danger");
+            return;
+        }
+
+        // Set editing state
+        editingConsultationId = consultationId;
+
+        // Switch to consultation screen
+        switchScreen('screen-consultation');
+
+        // Update form title to indicate edit mode
+        const formTitle = document.getElementById('consultation-form-title');
+        if (formTitle) {
+            formTitle.innerHTML = '<i data-lucide="file-edit"></i> Edit Clinical Consultation';
+        }
+
+        // Update the save button text
+        const saveBtn = document.getElementById('consultation-save-btn');
+        if (saveBtn) {
+            saveBtn.innerHTML = '<i data-lucide="save"></i> Update Consultation';
+        }
+
+        // Pre-fill the form with existing data
+        document.getElementById('consultation-active-patient').innerText = `${activePatient.name} (${activePatient.id})`;
+        document.getElementById('consult-symptoms').value = consult.symptoms || '';
+        document.getElementById('consult-diagnosis').value = consult.diagnosis || '';
+        document.getElementById('consult-doctor').value = consult.doctor_name || '';
+        document.getElementById('consult-specialization').value = consult.specialization || '';
+        document.getElementById('consult-hospital').value = consult.hospital_name || '';
+        document.getElementById('consult-date').value = consult.date || '';
+        document.getElementById('consult-treatment').value = consult.treatment || '';
+        document.getElementById('consult-notes').value = consult.notes || '';
+
+        lucide.createIcons();
+    } catch (err) {
+        showToast(err.message || "Failed to load consultation for editing", "danger");
+    }
+}
+
 // Screen 4: Add Consultation
 function goToAddConsultation() {
     if (!activePatient) return;
@@ -417,12 +559,29 @@ function goToAddConsultation() {
 }
 
 function prepareConsultationForm() {
+    // Reset editing state
+    editingConsultationId = null;
+
+    // Restore form title to "New" mode
+    const formTitle = document.getElementById('consultation-form-title');
+    if (formTitle) {
+        formTitle.innerHTML = '<i data-lucide="file-signature"></i> New Clinical Consultation';
+    }
+
+    // Restore the save button text
+    const saveBtn = document.getElementById('consultation-save-btn');
+    if (saveBtn) {
+        saveBtn.innerHTML = '<i data-lucide="save"></i> Save Consultation';
+    }
+
     document.getElementById('consultation-active-patient').innerText = `${activePatient.name} (${activePatient.id})`;
     document.getElementById('consultation-form').reset();
     
     // Default the date input to today's date in local YYYY-MM-DD
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('consult-date').value = today;
+
+    lucide.createIcons();
 }
 
 async function handleSaveConsultation(event) {
@@ -448,7 +607,6 @@ async function handleSaveConsultation(event) {
     }
 
     const payload = {
-        patient_id: activePatient.id,
         date: date,
         doctor_name: doctorName,
         specialization: specialization,
@@ -460,8 +618,17 @@ async function handleSaveConsultation(event) {
     };
 
     try {
-        await apiAddConsultation(payload);
-        showToast("Consultation saved successfully!");
+        if (editingConsultationId) {
+            // UPDATE existing consultation (no duplicate)
+            await apiUpdateConsultation(editingConsultationId, payload);
+            showToast("Consultation updated successfully!");
+            editingConsultationId = null;
+        } else {
+            // CREATE new consultation
+            payload.patient_id = activePatient.id;
+            await apiAddConsultation(payload);
+            showToast("Consultation saved successfully!");
+        }
         
         // Reset form and return to patient history timeline
         document.getElementById('consultation-form').reset();
@@ -473,6 +640,7 @@ async function handleSaveConsultation(event) {
 }
 
 function cancelAddConsultation() {
+    editingConsultationId = null;
     switchScreen('screen-history');
     renderCaseHistory();
 }
