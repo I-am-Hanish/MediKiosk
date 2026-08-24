@@ -416,6 +416,17 @@ header {
     height: 18px;
 }
 
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    gap: 5px;
+}
+
+.btn-sm svg {
+    width: 14px;
+    height: 14px;
+}
+
 /* Screen 1 specific: Success panel */
 .success-panel {
     display: flex;

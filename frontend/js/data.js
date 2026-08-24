@@ -23,7 +23,7 @@ async function apiRegisterPatient(patientData) {
 
 /**
  * Searches for a patient using their Kiosk Patient ID.
- * @param {string} patientId - The patient ID or name query
+ * @param {string} patientId - The patient ID query
  * @returns {Promise<Object>} The matching patient record
  */
 async function apiSearchPatient(patientId) {
@@ -70,13 +70,13 @@ async function apiAddConsultation(consultationData) {
 }
 
 /**
- * Updates an existing consultation record in-place (no duplicate creation).
- * @param {number} consultationId - The consultation ID to update
+ * Updates an existing clinical consultation record.
+ * @param {number|string} consultationId - The consultation primary key ID
  * @param {Object} consultationData - { date, doctor_name, specialization, hospital_name, symptoms, diagnosis, treatment, notes }
  * @returns {Promise<Object>} The response containing the updated smart summary
  */
 async function apiUpdateConsultation(consultationId, consultationData) {
-    const response = await fetch(`/api/patient/consultation/${consultationId}`, {
+    const response = await fetch(`/api/patient/consultation/${encodeURIComponent(consultationId)}`, {
         method: 'PUT',
         headers: {
             'Content-Type': 'application/json'
@@ -89,3 +89,4 @@ async function apiUpdateConsultation(consultationId, consultationData) {
     }
     return await response.json();
 }
+

@@ -1,703 +1,2072 @@
+
+// ============================================================
 // MediKiosk Frontend Application Controller
-// Orchestrates navigation, UI interactions, and API communications
+// ============================================================
 
-// Active state
 let activePatient = null;
-let currentScreen = 'screen-registration';
-let editingConsultationId = null; // Tracks if we are editing an existing consultation
+let currentScreen = "screen-registration";
+let editingConsultationId = null;
+let loadedConsultations = [];
 
-// Page Title & Subtitle Mapping
+let html5QrCode = null;
+let isScanning = false;
+
+// ============================================================
+// PAGE TITLES
+// ============================================================
+
 const SCREEN_TITLES = {
-    'screen-registration': {
+    "screen-registration": {
         title: "Patient Registration",
         desc: "Register a new patient and generate their digital health card"
     },
-    'screen-dashboard': {
+
+    "screen-dashboard": {
         title: "Doctor Dashboard",
         desc: "Locate patient profiles and manage clinical consults"
     },
-    'screen-history': {
+
+    "screen-history": {
         title: "Patient Case History",
         desc: "View comprehensive clinical history, timeline, and smart summaries"
     },
-    'screen-consultation': {
+
+    "screen-consultation": {
         title: "Add New Consultation",
         desc: "Record patient symptoms, clinical diagnosis, and treatments"
     }
 };
 
-// Document Ready
-document.addEventListener("DOMContentLoaded", () => {
-    // Render initial icons
-    lucide.createIcons();
-    
-    // Initialize default screen
-    switchScreen('screen-registration');
+// ============================================================
+// DOCUMENT READY
+// ============================================================
+
+document.addEventListener("DOMContentLoaded", async () => {
+
+    if (typeof lucide !== "undefined") {
+        lucide.createIcons();
+    }
+
+    const storedPatientId =
+        sessionStorage.getItem("activePatientId");
+
+    const storedScreen =
+        sessionStorage.getItem("currentScreen") ||
+        "screen-registration";
+
+    if (storedPatientId) {
+
+        try {
+
+            const patient =
+                await apiSearchPatient(storedPatientId);
+
+            activePatient = patient;
+
+            enablePatientNavigation();
+
+            populateDashboardCard(patient);
+
+            switchScreen(storedScreen);
+
+            if (storedScreen === "screen-history") {
+                await renderCaseHistory();
+            }
+
+            else if (storedScreen === "screen-consultation") {
+                prepareConsultationForm();
+            }
+
+            return;
+
+        } catch (error) {
+
+            console.warn(
+                "Could not restore patient session:",
+                error
+            );
+
+            sessionStorage.removeItem("activePatientId");
+
+            activePatient = null;
+        }
+    }
+
+    switchScreen("screen-registration");
 });
 
-// Screen Swapper
+// ============================================================
+// NAVIGATION
+// ============================================================
+
 function switchScreen(screenId) {
-    // Hide all screens
-    document.querySelectorAll('.screen').forEach(screen => {
-        screen.classList.remove('active-screen');
-        screen.style.display = 'none';
+
+    document.querySelectorAll(".screen").forEach(screen => {
+
+        screen.classList.remove("active-screen");
+
+        screen.style.display = "none";
     });
 
-    // Show selected screen
-    const targetScreen = document.getElementById(screenId);
+    const targetScreen =
+        document.getElementById(screenId);
+
     if (targetScreen) {
-        targetScreen.style.display = 'block';
+
+        targetScreen.style.display = "block";
+
         setTimeout(() => {
-            targetScreen.classList.add('active-screen');
+            targetScreen.classList.add("active-screen");
         }, 50);
     }
 
-    // Update active nav link
-    document.querySelectorAll('.nav-item').forEach(item => {
-        item.classList.remove('active');
+    document.querySelectorAll(".nav-item").forEach(item => {
+        item.classList.remove("active");
     });
 
-    // Match sidebar item
-    let navId = '';
-    if (screenId === 'screen-registration') navId = 'nav-registration';
-    else if (screenId === 'screen-dashboard') navId = 'nav-dashboard';
-    else if (screenId === 'screen-history') navId = 'nav-history';
-    else if (screenId === 'screen-consultation') navId = 'nav-consultation';
+    let navId = "";
 
-    const activeNav = document.getElementById(navId);
-    if (activeNav) {
-        activeNav.classList.add('active');
+    switch (screenId) {
+
+        case "screen-registration":
+            navId = "nav-registration";
+            break;
+
+        case "screen-dashboard":
+            navId = "nav-dashboard";
+            break;
+
+        case "screen-history":
+            navId = "nav-history";
+            break;
+
+        case "screen-consultation":
+            navId = "nav-consultation";
+            break;
     }
 
-    // Update headers
-    const headerInfo = SCREEN_TITLES[screenId];
+    const activeNav =
+        document.getElementById(navId);
+
+    if (activeNav) {
+        activeNav.classList.add("active");
+    }
+
+    const headerInfo =
+        SCREEN_TITLES[screenId];
+
     if (headerInfo) {
-        document.getElementById('page-title').innerText = headerInfo.title;
-        document.getElementById('page-desc').innerText = headerInfo.desc;
+
+        const title =
+            document.getElementById("page-title");
+
+        const desc =
+            document.getElementById("page-desc");
+
+        if (title) {
+            title.innerText = headerInfo.title;
+        }
+
+        if (desc) {
+            desc.innerText = headerInfo.desc;
+        }
     }
 
     currentScreen = screenId;
-    
-    // Re-create icons for any newly rendered content
-    lucide.createIcons();
+
+    sessionStorage.setItem(
+        "currentScreen",
+        screenId
+    );
+
+    if (typeof lucide !== "undefined") {
+        lucide.createIcons();
+    }
 }
 
-// Navigation Guards
-function tryNavigateHistory() {
-    if (activePatient) {
-        switchScreen('screen-history');
-        renderCaseHistory();
-    } else {
-        showToast("Please search or scan a patient first.", "danger");
+// ============================================================
+// NAVIGATION GUARDS
+// ============================================================
+
+function enablePatientNavigation() {
+
+    const historyNav =
+        document.getElementById("nav-history");
+
+    const consultationNav =
+        document.getElementById("nav-consultation");
+
+    if (historyNav) {
+        historyNav.classList.remove("disabled");
     }
+
+    if (consultationNav) {
+        consultationNav.classList.remove("disabled");
+    }
+}
+
+function disablePatientNavigation() {
+
+    const historyNav =
+        document.getElementById("nav-history");
+
+    const consultationNav =
+        document.getElementById("nav-consultation");
+
+    if (historyNav) {
+        historyNav.classList.add("disabled");
+    }
+
+    if (consultationNav) {
+        consultationNav.classList.add("disabled");
+    }
+}
+
+function tryNavigateHistory() {
+
+    if (!activePatient) {
+
+        showToast(
+            "Please search or scan a patient first.",
+            "danger"
+        );
+
+        return;
+    }
+
+    switchScreen("screen-history");
+
+    renderCaseHistory();
 }
 
 function tryNavigateConsultation() {
-    if (activePatient) {
-        switchScreen('screen-consultation');
-        prepareConsultationForm();
-    } else {
-        showToast("Please search or scan a patient first.", "danger");
+
+    if (!activePatient) {
+
+        showToast(
+            "Please search or scan a patient first.",
+            "danger"
+        );
+
+        return;
     }
+
+    switchScreen("screen-consultation");
+
+    prepareConsultationForm();
 }
 
-// Screen 1: Registration Handler
+// ============================================================
+// PATIENT REGISTRATION
+// ============================================================
+
 async function handleRegistration(event) {
+
     event.preventDefault();
 
-    const name = document.getElementById('reg-name').value.trim();
-    const age = parseInt(document.getElementById('reg-age').value);
-    const gender = document.getElementById('reg-gender').value;
-    const phone = document.getElementById('reg-phone').value.trim();
-    const allergies = document.getElementById('reg-allergies').value.trim() || 'None';
-    const conditions = document.getElementById('reg-conditions').value.trim() || 'None';
+    const name =
+        document.getElementById("reg-name").value.trim();
 
-    if (!name || isNaN(age) || !gender || !phone) {
-        showToast("Please fill all required fields.", "danger");
+    const age =
+        parseInt(
+            document.getElementById("reg-age").value,
+            10
+        );
+
+    const gender =
+        document.getElementById("reg-gender").value;
+
+    const phone =
+        document.getElementById("reg-phone").value.trim();
+
+    const allergies =
+        document.getElementById("reg-allergies").value.trim() ||
+        "None";
+
+    const conditions =
+        document.getElementById("reg-conditions").value.trim() ||
+        "None";
+
+    if (
+        !name ||
+        isNaN(age) ||
+        !gender ||
+        !phone
+    ) {
+
+        showToast(
+            "Please fill all required fields.",
+            "danger"
+        );
+
         return;
     }
 
     const patientData = {
-        name: name,
-        age: age,
-        gender: gender,
-        phone: phone,
-        allergies: allergies,
-        conditions: conditions
+        name,
+        age,
+        gender,
+        phone,
+        allergies,
+        conditions
     };
 
     try {
-        // API Call to register patient
-        const response = await apiRegisterPatient(patientData);
-        const registeredPatient = response.patient;
 
-        // Update UI elements
-        document.getElementById('success-patient-id').innerText = registeredPatient.id;
-        
-        // Generate QR Code URL — QR contains only the real Patient ID
-        const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${registeredPatient.id}`;
-        document.getElementById('success-qr-code').src = qrCodeUrl;
+        const response =
+            await apiRegisterPatient(patientData);
 
-        // Transition panels
-        document.getElementById('registration-form-card').style.display = 'none';
-        document.getElementById('registration-success-card').style.display = 'block';
+        const registeredPatient =
+            response.patient;
 
-        showToast("Patient registered successfully!");
-        
-        // Set active patient
-        activePatient = registeredPatient;
-        
-        // Enable history & consultation menu tabs
-        document.getElementById('nav-history').classList.remove('disabled');
-        document.getElementById('nav-consultation').classList.remove('disabled');
-    } catch (err) {
-        showToast(err.message || "Registration failed", "danger");
+        if (!registeredPatient || !registeredPatient.id) {
+            throw new Error(
+                "Invalid patient data returned by server."
+            );
+        }
+
+        // ====================================================
+        // ONLY QR GENERATION IN THE APPLICATION
+        // QR CONTAINS ONLY PATIENT ID
+        // ====================================================
+
+        const qrCodeUrl =
+            `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(registeredPatient.id)}`;
+
+        document.getElementById("success-patient-id").innerText =
+            registeredPatient.id;
+
+        document.getElementById("success-qr-code").src =
+            qrCodeUrl;
+
+        // ====================================================
+
+        document.getElementById(
+            "registration-form-card"
+        ).style.display = "none";
+
+        document.getElementById(
+            "registration-success-card"
+        ).style.display = "block";
+
+        activePatient =
+            registeredPatient;
+
+        sessionStorage.setItem(
+            "activePatientId",
+            registeredPatient.id
+        );
+
+        enablePatientNavigation();
+
+        if (typeof lucide !== "undefined") {
+            lucide.createIcons();
+        }
+
+        showToast(
+            "Patient registered successfully!"
+        );
+
+    } catch (error) {
+
+        console.error(
+            "Registration error:",
+            error
+        );
+
+        showToast(
+            error.message ||
+            "Registration failed",
+            "danger"
+        );
     }
 }
+
+// ============================================================
+// COPY PATIENT ID
+// ============================================================
 
 function copyPatientId() {
-    const idText = document.getElementById('success-patient-id').innerText;
-    navigator.clipboard.writeText(idText).then(() => {
-        showToast("Patient ID copied to clipboard!");
-        
-        // Temporarily change icon to checkmark
-        const copyIcon = document.getElementById('copy-icon');
-        copyIcon.setAttribute('data-lucide', 'check');
-        lucide.createIcons();
-        
-        setTimeout(() => {
-            copyIcon.setAttribute('data-lucide', 'copy');
-            lucide.createIcons();
-        }, 2000);
-    }).catch(err => {
-        console.error("Failed to copy ID: ", err);
-    });
-}
 
-function resetRegistrationForm() {
-    document.getElementById('patient-registration-form').reset();
-    document.getElementById('registration-success-card').style.display = 'none';
-    document.getElementById('registration-form-card').style.display = 'block';
-}
+    const element =
+        document.getElementById(
+            "success-patient-id"
+        );
 
-function goToDashboardWithId() {
-    switchScreen('screen-dashboard');
-    if (activePatient) {
-        document.getElementById('dashboard-search-id').value = activePatient.id;
-        searchPatient();
+    if (!element) return;
+
+    const idText =
+        element.innerText;
+
+    if (
+        navigator.clipboard &&
+        navigator.clipboard.writeText
+    ) {
+
+        navigator.clipboard
+            .writeText(idText)
+            .then(() => {
+
+                showToast(
+                    "Patient ID copied to clipboard!"
+                );
+
+            })
+            .catch(error => {
+
+                console.error(
+                    "Failed to copy ID:",
+                    error
+                );
+
+                showToast(
+                    "Unable to copy Patient ID.",
+                    "danger"
+                );
+            });
+
+    } else {
+
+        showToast(
+            "Clipboard is not available.",
+            "danger"
+        );
     }
 }
 
-// Screen 2: Doctor Dashboard (Search & QR Scan)
-async function searchPatient() {
-    const searchInput = document.getElementById('dashboard-search-id').value.trim();
+// ============================================================
+// RESET REGISTRATION
+// ============================================================
+
+function resetRegistrationForm() {
+
+    const form =
+        document.getElementById(
+            "patient-registration-form"
+        );
+
+    if (form) {
+        form.reset();
+    }
+
+    document.getElementById(
+        "registration-success-card"
+    ).style.display = "none";
+
+    document.getElementById(
+        "registration-form-card"
+    ).style.display = "block";
+
+    // Do not remove active patient.
+    // The newly registered patient remains active.
+}
+
+// ============================================================
+// GO TO DASHBOARD
+// ============================================================
+
+function goToDashboardWithId() {
+
+    switchScreen("screen-dashboard");
+
+    if (activePatient) {
+
+        const input =
+            document.getElementById(
+                "dashboard-search-id"
+            );
+
+        if (input) {
+            input.value =
+                activePatient.id;
+        }
+
+        searchPatient(
+            activePatient.id
+        );
+    }
+}
+
+// ============================================================
+// DASHBOARD / PATIENT SEARCH
+// ============================================================
+
+async function searchPatient(specificId = null) {
+
+    const inputElement =
+        document.getElementById(
+            "dashboard-search-id"
+        );
+
+    const searchInput =
+        (
+            specificId ||
+            inputElement?.value ||
+            ""
+        ).trim();
+
     if (!searchInput) {
-        showToast("Please enter a Patient ID.", "danger");
+
+        showToast(
+            "Please enter a Patient ID.",
+            "danger"
+        );
+
         return;
     }
 
     try {
-        // Fetch patient from backend database
-        const patient = await apiSearchPatient(searchInput);
-        activePatient = patient;
-        
-        // Show details card
-        document.getElementById('quick-name').innerText = patient.name;
-        document.getElementById('quick-id').innerText = patient.id;
-        document.getElementById('quick-gender').innerText = patient.gender;
-        document.getElementById('quick-age').innerText = patient.age;
-        document.getElementById('quick-phone').innerText = patient.phone;
-        
-        // Set gender badge text/class
-        const genderBadge = document.getElementById('quick-gender-badge');
-        genderBadge.innerText = patient.gender;
 
-        // Allergies check
-        const allergyBox = document.getElementById('quick-allergy-box');
-        const allergyText = document.getElementById('quick-allergies');
-        const allergyIcon = document.getElementById('quick-allergy-icon');
-        
-        if (patient.allergies && patient.allergies.toLowerCase() !== 'none') {
-            allergyBox.className = 'quick-critical-box has-allergies';
-            allergyText.innerText = patient.allergies;
-            allergyIcon.setAttribute('data-lucide', 'alert-triangle');
-        } else {
-            allergyBox.className = 'quick-critical-box no-allergies';
-            allergyText.innerText = "No known allergies listed.";
-            allergyIcon.setAttribute('data-lucide', 'check-circle-2');
+        const patient =
+            await apiSearchPatient(searchInput);
+
+        if (!patient) {
+            throw new Error(
+                "Patient not found."
+            );
         }
 
-        // Enable tabs
-        document.getElementById('nav-history').classList.remove('disabled');
-        document.getElementById('nav-consultation').classList.remove('disabled');
+        activePatient =
+            patient;
 
-        // Show card
-        document.getElementById('dashboard-patient-card').style.display = 'block';
-        
-        showToast("Patient record located.");
-        lucide.createIcons();
-    } catch (err) {
-        showToast("Patient not found. Please check the Patient ID.", "danger");
-        document.getElementById('dashboard-patient-card').style.display = 'none';
-        
-        // Disable tabs if no current patient
-        if (!activePatient) {
-            document.getElementById('nav-history').classList.add('disabled');
-            document.getElementById('nav-consultation').classList.add('disabled');
+        sessionStorage.setItem(
+            "activePatientId",
+            patient.id
+        );
+
+        populateDashboardCard(patient);
+
+        enablePatientNavigation();
+
+        const patientCard =
+            document.getElementById(
+                "dashboard-patient-card"
+            );
+
+        if (patientCard) {
+            patientCard.style.display =
+                "block";
         }
+
+        showToast(
+            "Patient record located."
+        );
+
+        if (typeof lucide !== "undefined") {
+            lucide.createIcons();
+        }
+
+    } catch (error) {
+
+        console.error(
+            "Patient search error:",
+            error
+        );
+
+        showToast(
+            error.message ||
+            "Patient not found. Please check the Patient ID.",
+            "danger"
+        );
+
+        const patientCard =
+            document.getElementById(
+                "dashboard-patient-card"
+            );
+
+        if (patientCard) {
+            patientCard.style.display =
+                "none";
+        }
+
+        activePatient = null;
+
+        sessionStorage.removeItem(
+            "activePatientId"
+        );
+
+        disablePatientNavigation();
     }
 }
 
-// QR Scanner state
-let scannerStream = null;
-let scannerScanInterval = null;
+// ============================================================
+// DASHBOARD PATIENT CARD
+// ============================================================
 
-// QR Scanner Handler
-async function openScanner() {
-    const modal = document.getElementById('scanner-modal');
-    const statusText = document.getElementById('scanner-status');
-    const manualInput = document.getElementById('scanner-manual-id');
-    const video = document.getElementById('scanner-video');
-    const icon = document.getElementById('scanner-camera-icon');
+function populateDashboardCard(patient) {
 
-    // Clear previous search/patient input so previous patient is never re-used
-    document.getElementById('dashboard-search-id').value = '';
-    if (manualInput) {
-        manualInput.value = '';
-    }
+    if (!patient) return;
 
-    modal.classList.add('modal-active');
-    statusText.innerText = "Requesting camera access...";
-    statusText.className = "scanner-status scanning";
+    const setText =
+        (id, value) => {
 
-    // Attempt actual camera scanning if available
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        try {
-            scannerStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-            if (video) {
-                video.srcObject = scannerStream;
-                video.style.display = "block";
-                if (icon) icon.style.display = "none";
-                await video.play();
-                statusText.innerText = "Scanning QR Code... Hold patient card steady.";
-                statusText.className = "scanner-status scanning";
-                startQrVideoScanning(video);
+            const element =
+                document.getElementById(id);
+
+            if (element) {
+                element.innerText =
+                    value ?? "";
             }
-        } catch (err) {
-            console.log("Camera feed not accessible:", err);
-            if (video) video.style.display = "none";
-            if (icon) icon.style.display = "block";
-            statusText.innerText = "Camera not available. Enter Patient ID below:";
-            statusText.className = "scanner-status";
+        };
+
+    setText(
+        "quick-name",
+        patient.name
+    );
+
+    setText(
+        "quick-id",
+        patient.id
+    );
+
+    setText(
+        "quick-gender",
+        patient.gender
+    );
+
+    setText(
+        "quick-age",
+        patient.age
+    );
+
+    setText(
+        "quick-phone",
+        patient.phone
+    );
+
+    const genderBadge =
+        document.getElementById(
+            "quick-gender-badge"
+        );
+
+    if (genderBadge) {
+        genderBadge.innerText =
+            patient.gender || "";
+    }
+
+    const allergyBox =
+        document.getElementById(
+            "quick-allergy-box"
+        );
+
+    const allergyText =
+        document.getElementById(
+            "quick-allergies"
+        );
+
+    const allergyIcon =
+        document.getElementById(
+            "quick-allergy-icon"
+        );
+
+    const allergyValue =
+        String(patient.allergies || "")
+            .trim();
+
+    const hasAllergies =
+        allergyValue &&
+        allergyValue.toLowerCase() !== "none";
+
+    if (hasAllergies) {
+
+        if (allergyBox) {
+            allergyBox.className =
+                "quick-critical-box has-allergies";
         }
+
+        if (allergyText) {
+            allergyText.innerText =
+                allergyValue;
+        }
+
+        if (allergyIcon) {
+            allergyIcon.setAttribute(
+                "data-lucide",
+                "alert-triangle"
+            );
+        }
+
     } else {
-        if (video) video.style.display = "none";
-        if (icon) icon.style.display = "block";
-        statusText.innerText = "Camera not available. Enter Patient ID below:";
-        statusText.className = "scanner-status";
-    }
 
-    lucide.createIcons();
-}
+        if (allergyBox) {
+            allergyBox.className =
+                "quick-critical-box no-allergies";
+        }
 
-function startQrVideoScanning(video) {
-    if ('BarcodeDetector' in window) {
-        try {
-            const detector = new BarcodeDetector({ formats: ['qr_code'] });
-            scannerScanInterval = setInterval(async () => {
-                if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) return;
-                try {
-                    const barcodes = await detector.detect(video);
-                    if (barcodes.length > 0) {
-                        const rawValue = barcodes[0].rawValue.trim();
-                        if (rawValue) {
-                            stopScanner();
-                            onQrCodeScanned(rawValue);
-                        }
-                    }
-                } catch (e) {
-                    console.error("Barcode detection error:", e);
-                }
-            }, 300);
-        } catch (err) {
-            console.log("BarcodeDetector initialization failed:", err);
+        if (allergyText) {
+            allergyText.innerText =
+                "No known allergies listed.";
+        }
+
+        if (allergyIcon) {
+            allergyIcon.setAttribute(
+                "data-lucide",
+                "check-circle-2"
+            );
         }
     }
-}
 
-function onQrCodeScanned(scannedText) {
-    closeScanner();
-    let patientId = scannedText.trim();
-    if (patientId.includes('?id=')) {
-        const match = patientId.match(/[?&]id=([^&]+)/);
-        if (match) patientId = decodeURIComponent(match[1]);
+    if (typeof lucide !== "undefined") {
+        lucide.createIcons();
     }
-    document.getElementById('dashboard-search-id').value = patientId;
-    searchPatient();
 }
 
-function submitScannerManualId() {
-    const manualInput = document.getElementById('scanner-manual-id');
-    const patientId = manualInput ? manualInput.value.trim() : '';
-    if (!patientId) {
-        showToast("Please enter a Patient ID.", "danger");
+// ============================================================
+// QR SCANNER
+// ============================================================
+
+async function openScanner() {
+
+    const modal =
+        document.getElementById(
+            "scanner-modal"
+        );
+
+    const statusText =
+        document.getElementById(
+            "scanner-status"
+        );
+
+    const manualInput =
+        document.getElementById(
+            "scanner-manual-input"
+        );
+
+    if (!modal) return;
+
+    modal.classList.add(
+        "modal-active"
+    );
+
+    if (manualInput) {
+        manualInput.value = "";
+    }
+
+    if (statusText) {
+
+        statusText.innerText =
+            "Initializing camera feed...";
+
+        statusText.className =
+            "scanner-status scanning";
+    }
+
+    if (
+        typeof Html5Qrcode ===
+        "undefined"
+    ) {
+
+        showScannerFallback();
+
         return;
     }
-    closeScanner();
-    document.getElementById('dashboard-search-id').value = patientId;
-    searchPatient();
+
+    try {
+
+        if (html5QrCode && isScanning) {
+            await stopScanner();
+        }
+
+        if (!html5QrCode) {
+
+            html5QrCode =
+                new Html5Qrcode(
+                    "qr-reader"
+                );
+        }
+
+        const qrReader =
+            document.getElementById(
+                "qr-reader"
+            );
+
+        const placeholder =
+            document.getElementById(
+                "scanner-camera-placeholder"
+            );
+
+        const laser =
+            document.getElementById(
+                "scanner-laser"
+            );
+
+        if (qrReader) {
+            qrReader.style.display =
+                "block";
+        }
+
+        if (placeholder) {
+            placeholder.style.display =
+                "none";
+        }
+
+        if (laser) {
+            laser.style.display =
+                "none";
+        }
+
+        await html5QrCode.start(
+
+            {
+                facingMode: "environment"
+            },
+
+            {
+                fps: 10,
+                qrbox: {
+                    width: 220,
+                    height: 220
+                }
+            },
+
+            decodedText => {
+                handleQrSuccess(decodedText);
+            },
+
+            () => {
+                // QR not detected yet.
+            }
+        );
+
+        isScanning = true;
+
+        if (statusText) {
+
+            statusText.innerText =
+                "Camera active. Align patient QR code inside window.";
+
+            statusText.className =
+                "scanner-status scanning";
+        }
+
+    } catch (error) {
+
+        console.warn(
+            "Camera start failed:",
+            error
+        );
+
+        showScannerFallback();
+    }
 }
+
+// ============================================================
+// SCANNER FALLBACK
+// ============================================================
+
+function showScannerFallback() {
+
+    const qrReader =
+        document.getElementById(
+            "qr-reader"
+        );
+
+    const placeholder =
+        document.getElementById(
+            "scanner-camera-placeholder"
+        );
+
+    const laser =
+        document.getElementById(
+            "scanner-laser"
+        );
+
+    const statusText =
+        document.getElementById(
+            "scanner-status"
+        );
+
+    if (qrReader) {
+        qrReader.style.display =
+            "none";
+    }
+
+    if (placeholder) {
+        placeholder.style.display =
+            "block";
+    }
+
+    if (laser) {
+        laser.style.display =
+            "block";
+    }
+
+    if (statusText) {
+
+        statusText.innerText =
+            "Camera unavailable. Enter Patient ID manually below.";
+
+        statusText.className =
+            "scanner-status";
+    }
+}
+
+// ============================================================
+// QR SUCCESS
+// ============================================================
+
+async function handleQrSuccess(decodedText) {
+
+    const cleanId =
+        String(decodedText || "").trim();
+
+    if (!cleanId) return;
+
+    const statusText =
+        document.getElementById(
+            "scanner-status"
+        );
+
+    if (statusText) {
+
+        statusText.innerText =
+            `QR Detected: ${cleanId}`;
+
+        statusText.className =
+            "scanner-status success";
+    }
+
+    await stopScanner();
+
+    document.getElementById(
+        "scanner-modal"
+    ).classList.remove(
+        "modal-active"
+    );
+
+    const searchInput =
+        document.getElementById(
+            "dashboard-search-id"
+        );
+
+    if (searchInput) {
+        searchInput.value =
+            cleanId;
+    }
+
+    await searchPatient(cleanId);
+}
+
+// ============================================================
+// MANUAL SCANNER SUBMIT
+// ============================================================
+
+async function handleScannerManualSubmit() {
+
+    const manualInput =
+        document.getElementById(
+            "scanner-manual-input"
+        );
+
+    const inputVal =
+        manualInput?.value.trim() || "";
+
+    if (!inputVal) {
+
+        showToast(
+            "Please enter a Patient ID.",
+            "danger"
+        );
+
+        return;
+    }
+
+    await stopScanner();
+
+    document.getElementById(
+        "scanner-modal"
+    ).classList.remove(
+        "modal-active"
+    );
+
+    const searchInput =
+        document.getElementById(
+            "dashboard-search-id"
+        );
+
+    if (searchInput) {
+        searchInput.value =
+            inputVal;
+    }
+
+    await searchPatient(inputVal);
+}
+
+// ============================================================
+// MANUAL SCANNER ENTER KEY
+// ============================================================
 
 function handleScannerKeypress(event) {
-    if (event.key === 'Enter') {
+
+    if (event.key === "Enter") {
+
         event.preventDefault();
-        submitScannerManualId();
+
+        handleScannerManualSubmit();
     }
 }
+
+// ============================================================
+// CLOSE SCANNER
+// ============================================================
+// Required structure
 
 function closeScanner() {
+
     stopScanner();
-    document.getElementById('scanner-modal').classList.remove('modal-active');
+
+    document.getElementById(
+        "scanner-modal"
+    ).classList.remove(
+        "modal-active"
+    );
 }
 
-function stopScanner() {
-    if (scannerScanInterval) {
-        clearInterval(scannerScanInterval);
-        scannerScanInterval = null;
+// ============================================================
+// STOP SCANNER
+// ============================================================
+
+async function stopScanner() {
+
+    if (html5QrCode && isScanning) {
+
+        try {
+
+            await html5QrCode.stop();
+
+        } catch (error) {
+
+            console.warn(
+                "Error stopping QR scanner:",
+                error
+            );
+        }
+
+        isScanning = false;
     }
-    if (scannerStream) {
-        scannerStream.getTracks().forEach(track => track.stop());
-        scannerStream = null;
+
+    const qrReader =
+        document.getElementById(
+            "qr-reader"
+        );
+
+    if (qrReader) {
+
+        qrReader.style.display =
+            "none";
     }
-    const video = document.getElementById('scanner-video');
-    if (video) {
-        video.srcObject = null;
-        video.style.display = "none";
+
+    const placeholder =
+        document.getElementById(
+            "scanner-camera-placeholder"
+        );
+
+    if (placeholder) {
+
+        placeholder.style.display =
+            "block";
     }
-    const icon = document.getElementById('scanner-camera-icon');
-    if (icon) {
-        icon.style.display = "block";
+
+    const laser =
+        document.getElementById(
+            "scanner-laser"
+        );
+
+    if (laser) {
+
+        laser.style.display =
+            "block";
     }
 }
 
-// Screen 3: Patient Case History Renderer
+// ============================================================
+// PATIENT HISTORY
+// ============================================================
+
 function goToCaseHistory() {
-    if (!activePatient) return;
-    switchScreen('screen-history');
+
+    if (!activePatient) {
+
+        showToast(
+            "Please select a patient first.",
+            "danger"
+        );
+
+        return;
+    }
+
+    switchScreen(
+        "screen-history"
+    );
+
     renderCaseHistory();
 }
 
 async function renderCaseHistory() {
+
     if (!activePatient) return;
 
     try {
-        // Load fresh data from live API
-        const data = await apiGetPatientHistory(activePatient.id);
-        activePatient = data.patient;
-        const consultations = data.consultations;
 
-        // Profile header
-        document.getElementById('history-patient-name').innerText = activePatient.name;
-        document.getElementById('history-patient-id').innerText = activePatient.id;
-        document.getElementById('history-patient-age').innerText = activePatient.age;
-        document.getElementById('history-patient-gender').innerText = activePatient.gender;
-        document.getElementById('history-patient-phone').innerText = activePatient.phone;
+        const data =
+            await apiGetPatientHistory(
+                activePatient.id
+            );
 
-        // Allergy warnings
-        const allergyBanner = document.getElementById('history-allergy-banner');
-        const allergyText = document.getElementById('history-allergy-text');
-        
-        if (activePatient.allergies && activePatient.allergies.toLowerCase() !== 'none') {
-            allergyBanner.style.display = 'flex';
-            allergyText.innerText = activePatient.allergies;
-        } else {
-            allergyBanner.style.display = 'none';
+        activePatient =
+            data.patient;
+
+        loadedConsultations =
+            data.consultations || [];
+
+        const setText =
+            (id, value) => {
+
+                const element =
+                    document.getElementById(id);
+
+                if (element) {
+                    element.innerText =
+                        value ?? "";
+                }
+            };
+
+        setText(
+            "history-patient-name",
+            activePatient.name
+        );
+
+        setText(
+            "history-patient-id",
+            activePatient.id
+        );
+
+        setText(
+            "history-patient-age",
+            activePatient.age
+        );
+
+        setText(
+            "history-patient-gender",
+            activePatient.gender
+        );
+
+        setText(
+            "history-patient-phone",
+            activePatient.phone
+        );
+
+        const allergyBanner =
+            document.getElementById(
+                "history-allergy-banner"
+            );
+
+        const allergyText =
+            document.getElementById(
+                "history-allergy-text"
+            );
+
+        const allergyValue =
+            String(
+                activePatient.allergies || ""
+            ).trim();
+
+        const hasAllergies =
+            allergyValue &&
+            allergyValue.toLowerCase() !== "none";
+
+        if (allergyBanner) {
+
+            allergyBanner.style.display =
+                hasAllergies
+                    ? "flex"
+                    : "none";
         }
 
-        // Sidebar cards
-        document.getElementById('history-conditions').innerText = activePatient.conditions || 'None';
-        
-        // Smart Case Summary
-        const summaryElement = document.getElementById('history-smart-summary');
-        if (consultations.length === 0) {
-            summaryElement.innerText = "No consultation history available yet.";
-        } else {
-            summaryElement.innerText = activePatient.summary;
+        if (
+            hasAllergies &&
+            allergyText
+        ) {
+            allergyText.innerText =
+                allergyValue;
         }
 
-        // Chronological Timeline
-        const timelineContainer = document.getElementById('patient-timeline');
-        timelineContainer.innerHTML = '';
+        setText(
+            "history-conditions",
+            activePatient.conditions || "None"
+        );
 
-        if (consultations.length === 0) {
+        const summaryElement =
+            document.getElementById(
+                "history-smart-summary"
+            );
+
+        if (summaryElement) {
+
+            summaryElement.innerText =
+                loadedConsultations.length === 0
+                    ? "No consultation history available yet."
+                    : activePatient.summary ||
+                    "No consultation history available yet.";
+        }
+
+        const timelineContainer =
+            document.getElementById(
+                "patient-timeline"
+            );
+
+        if (!timelineContainer) return;
+
+        timelineContainer.innerHTML = "";
+
+        if (
+            loadedConsultations.length === 0
+        ) {
+
             timelineContainer.innerHTML = `
                 <div class="empty-timeline">
                     <i data-lucide="folder-open"></i>
-                    <p>No previous consultations found for this patient.</p>
-                    <p style="font-size: 0.85rem; margin-top: 4px;">Click "+ Add New Consultation" to begin recording history.</p>
+
+                    <p>
+                        No previous consultations found for this patient.
+                    </p>
+
+                    <p style="font-size:0.85rem;margin-top:4px;">
+                        Click "+ Add New Consultation" to begin recording history.
+                    </p>
                 </div>
             `;
+
+            if (typeof lucide !== "undefined") {
+                lucide.createIcons();
+            }
+
+            return;
+        }
+
+        loadedConsultations.forEach(
+            consult => {
+
+                const item =
+                    document.createElement(
+                        "div"
+                    );
+
+                item.className =
+                    "timeline-item";
+
+                const notesSection =
+                    consult.notes
+                        ? `
+                            <div class="timeline-notes">
+                                <strong>Notes:</strong>
+                                ${escapeHtml(consult.notes)}
+                            </div>
+                        `
+                        : "";
+
+                item.innerHTML = `
+                    <div class="timeline-node"></div>
+
+                    <div class="timeline-date-doctor">
+
+                        <div class="timeline-date">
+                            ${formatDate(consult.date)}
+                        </div>
+
+                        <div style="
+                            display:flex;
+                            align-items:center;
+                            gap:8px;
+                        ">
+
+                            <div class="timeline-doctor">
+
+                                <i data-lucide="user-cog"></i>
+
+                                ${escapeHtml(
+                    consult.doctor_name
+                )}
+
+                                (${escapeHtml(
+                    consult.specialization
+                )})
+
+                                at
+
+                                ${escapeHtml(
+                    consult.hospital_name
+                )}
+
+                            </div>
+
+                            <button
+                                type="button"
+                                class="btn btn-secondary btn-sm"
+                                onclick="openEditConsultation(${Number(consult.id)})"
+                                title="Edit Consultation"
+                            >
+
+                                <i data-lucide="edit-3"></i>
+
+                                Edit
+
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                    <div class="timeline-card">
+
+                        <div class="timeline-detail-row">
+
+                            <div class="timeline-label">
+                                Symptoms
+                            </div>
+
+                            <div class="timeline-content">
+                                ${escapeHtml(
+                    consult.symptoms
+                )}
+                            </div>
+
+                        </div>
+
+                        <div class="timeline-detail-row">
+
+                            <div class="timeline-label">
+                                Diagnosis
+                            </div>
+
+                            <div
+                                class="timeline-content"
+                                style="
+                                    font-weight:600;
+                                    color:var(--danger);
+                                "
+                            >
+                                ${escapeHtml(
+                    consult.diagnosis
+                )}
+                            </div>
+
+                        </div>
+
+                        <div class="timeline-detail-row">
+
+                            <div class="timeline-label">
+                                Treatment Prescribed
+                            </div>
+
+                            <div
+                                class="timeline-content"
+                                style="
+                                    color:var(--accent-teal);
+                                    font-weight:500;
+                                "
+                            >
+                                ${escapeHtml(
+                    consult.treatment
+                )}
+                            </div>
+
+                        </div>
+
+                        ${notesSection}
+
+                        <div class="flow-diagram">
+
+                            <span class="flow-step date">
+                                ${formatDate(
+                    consult.date
+                )}
+                            </span>
+
+                            <span class="flow-arrow">
+                                <i data-lucide="chevron-right"></i>
+                            </span>
+
+                            <span class="flow-step doc">
+                                ${escapeHtml(
+                    consult.doctor_name
+                )}
+                            </span>
+
+                            <span class="flow-arrow">
+                                <i data-lucide="chevron-right"></i>
+                            </span>
+
+                            <span class="flow-step sym">
+                                Symptoms:
+                                ${escapeHtml(
+                    truncateText(
+                        consult.symptoms,
+                        15
+                    )
+                )}
+                            </span>
+
+                            <span class="flow-arrow">
+                                <i data-lucide="chevron-right"></i>
+                            </span>
+
+                            <span class="flow-step diag">
+                                Diag:
+                                ${escapeHtml(
+                    truncateText(
+                        consult.diagnosis,
+                        15
+                    )
+                )}
+                            </span>
+
+                            <span class="flow-arrow">
+                                <i data-lucide="chevron-right"></i>
+                            </span>
+
+                            <span class="flow-step treat">
+                                Treat:
+                                ${escapeHtml(
+                    truncateText(
+                        consult.treatment,
+                        15
+                    )
+                )}
+                            </span>
+
+                        </div>
+
+                        <div class="timeline-actions">
+
+                            <button
+                                type="button"
+                                class="btn btn-outline btn-sm"
+                                onclick="openEditConsultation(${Number(consult.id)})"
+                                title="Edit this consultation"
+                            >
+
+                                <i data-lucide="pencil"></i>
+
+                                Edit
+
+                            </button>
+
+                        </div>
+
+                    </div>
+                `;
+
+                timelineContainer.appendChild(
+                    item
+                );
+            }
+        );
+
+        if (typeof lucide !== "undefined") {
             lucide.createIcons();
-            return;
         }
 
-        // Render database entries with Edit buttons
-        consultations.forEach(consult => {
-            const item = document.createElement('div');
-            item.className = 'timeline-item';
-            
-            const notesSection = consult.notes ? `<div class="timeline-notes"><strong>Notes:</strong> ${consult.notes}</div>` : '';
-            
-            item.innerHTML = `
-                <div class="timeline-node"></div>
-                <div class="timeline-date-doctor">
-                    <div class="timeline-date">${formatDate(consult.date)}</div>
-                    <div class="timeline-doctor">
-                        <i data-lucide="user-cog"></i>
-                        ${consult.doctor_name} (${consult.specialization}) at ${consult.hospital_name}
-                    </div>
-                </div>
-                <div class="timeline-card">
-                    <div class="timeline-detail-row">
-                        <div class="timeline-label">Symptoms</div>
-                        <div class="timeline-content">${consult.symptoms}</div>
-                    </div>
-                    <div class="timeline-detail-row">
-                        <div class="timeline-label">Diagnosis</div>
-                        <div class="timeline-content" style="font-weight: 600; color: var(--danger);">${consult.diagnosis}</div>
-                    </div>
-                    <div class="timeline-detail-row">
-                        <div class="timeline-label">Treatment Prescribed</div>
-                        <div class="timeline-content" style="color: var(--accent-teal); font-weight: 500;">${consult.treatment}</div>
-                    </div>
-                    ${notesSection}
-                    
-                    <!-- Chronological Flow layout: Date -> Doctor -> Symptoms -> Diagnosis -> Treatment -->
-                    <div class="flow-diagram">
-                        <span class="flow-step date">${formatDate(consult.date)}</span>
-                        <span class="flow-arrow"><i data-lucide="chevron-right" style="width:10px; height:10px;"></i></span>
-                        <span class="flow-step doc">${consult.doctor_name}</span>
-                        <span class="flow-arrow"><i data-lucide="chevron-right" style="width:10px; height:10px;"></i></span>
-                        <span class="flow-step sym">Symptoms: ${truncateText(consult.symptoms, 15)}</span>
-                        <span class="flow-arrow"><i data-lucide="chevron-right" style="width:10px; height:10px;"></i></span>
-                        <span class="flow-step diag">Diag: ${truncateText(consult.diagnosis, 15)}</span>
-                        <span class="flow-arrow"><i data-lucide="chevron-right" style="width:10px; height:10px;"></i></span>
-                        <span class="flow-step treat">Treat: ${truncateText(consult.treatment, 15)}</span>
-                    </div>
+    } catch (error) {
 
-                    <div class="timeline-actions">
-                        <button class="btn btn-outline btn-sm" onclick="startEditConsultation(${consult.id}, this)" title="Edit this consultation">
-                            <i data-lucide="pencil"></i>
-                            Edit
-                        </button>
-                    </div>
-                </div>
-            `;
-            timelineContainer.appendChild(item);
-        });
+        console.error(
+            "History loading error:",
+            error
+        );
 
-        lucide.createIcons();
-    } catch (err) {
-        showToast(err.message || "Failed to load timeline", "danger");
+        showToast(
+            error.message ||
+            "Failed to load timeline",
+            "danger"
+        );
     }
 }
 
-// Edit Consultation — loads data into the consultation form in edit mode
-async function startEditConsultation(consultationId, btnElement) {
-    if (!activePatient) return;
+// ============================================================
+// ADD CONSULTATION
+// ============================================================
 
-    try {
-        // Get fresh history data to find the consultation
-        const data = await apiGetPatientHistory(activePatient.id);
-        const consult = data.consultations.find(c => c.id === consultationId);
-
-        if (!consult) {
-            showToast("Consultation not found.", "danger");
-            return;
-        }
-
-        // Set editing state
-        editingConsultationId = consultationId;
-
-        // Switch to consultation screen
-        switchScreen('screen-consultation');
-
-        // Update form title to indicate edit mode
-        const formTitle = document.getElementById('consultation-form-title');
-        if (formTitle) {
-            formTitle.innerHTML = '<i data-lucide="file-edit"></i> Edit Clinical Consultation';
-        }
-
-        // Update the save button text
-        const saveBtn = document.getElementById('consultation-save-btn');
-        if (saveBtn) {
-            saveBtn.innerHTML = '<i data-lucide="save"></i> Update Consultation';
-        }
-
-        // Pre-fill the form with existing data
-        document.getElementById('consultation-active-patient').innerText = `${activePatient.name} (${activePatient.id})`;
-        document.getElementById('consult-symptoms').value = consult.symptoms || '';
-        document.getElementById('consult-diagnosis').value = consult.diagnosis || '';
-        document.getElementById('consult-doctor').value = consult.doctor_name || '';
-        document.getElementById('consult-specialization').value = consult.specialization || '';
-        document.getElementById('consult-hospital').value = consult.hospital_name || '';
-        document.getElementById('consult-date').value = consult.date || '';
-        document.getElementById('consult-treatment').value = consult.treatment || '';
-        document.getElementById('consult-notes').value = consult.notes || '';
-
-        lucide.createIcons();
-    } catch (err) {
-        showToast(err.message || "Failed to load consultation for editing", "danger");
-    }
-}
-
-// Screen 4: Add Consultation
 function goToAddConsultation() {
-    if (!activePatient) return;
-    switchScreen('screen-consultation');
+
+    if (!activePatient) {
+
+        showToast(
+            "Please select a patient first.",
+            "danger"
+        );
+
+        return;
+    }
+
+    switchScreen(
+        "screen-consultation"
+    );
+
     prepareConsultationForm();
 }
 
 function prepareConsultationForm() {
-    // Reset editing state
+
+    if (!activePatient) return;
+
     editingConsultationId = null;
 
-    // Restore form title to "New" mode
-    const formTitle = document.getElementById('consultation-form-title');
-    if (formTitle) {
-        formTitle.innerHTML = '<i data-lucide="file-signature"></i> New Clinical Consultation';
+    const form =
+        document.getElementById(
+            "consultation-form"
+        );
+
+    if (form) {
+        form.reset();
     }
 
-    // Restore the save button text
-    const saveBtn = document.getElementById('consultation-save-btn');
-    if (saveBtn) {
-        saveBtn.innerHTML = '<i data-lucide="save"></i> Save Consultation';
+    const editId =
+        document.getElementById(
+            "edit-consultation-id"
+        );
+
+    if (editId) {
+        editId.value = "";
     }
 
-    document.getElementById('consultation-active-patient').innerText = `${activePatient.name} (${activePatient.id})`;
-    document.getElementById('consultation-form').reset();
-    
-    // Default the date input to today's date in local YYYY-MM-DD
-    const today = new Date().toISOString().split('T')[0];
-    document.getElementById('consult-date').value = today;
+    const patientLabel =
+        document.getElementById(
+            "consultation-active-patient"
+        );
 
-    lucide.createIcons();
+    if (patientLabel) {
+
+        patientLabel.innerText =
+            `${activePatient.name} (${activePatient.id})`;
+    }
+
+    const titleText =
+        document.getElementById(
+            "consultation-title-text"
+        );
+
+    if (titleText) {
+        titleText.innerText =
+            "New Clinical Consultation";
+    }
+
+    const btnText =
+        document.getElementById(
+            "consultation-btn-text"
+        );
+
+    if (btnText) {
+        btnText.innerText =
+            "Save Consultation";
+    }
+
+    const dateInput =
+        document.getElementById(
+            "consult-date"
+        );
+
+    if (dateInput) {
+
+        const today =
+            new Date()
+                .toISOString()
+                .split("T")[0];
+
+        dateInput.value =
+            today;
+    }
+
+    document.getElementById(
+        "page-title"
+    ).innerText =
+        "Add New Consultation";
+
+    document.getElementById(
+        "page-desc"
+    ).innerText =
+        "Record patient symptoms, clinical diagnosis, and treatments";
+
+    if (typeof lucide !== "undefined") {
+        lucide.createIcons();
+    }
 }
 
-async function handleSaveConsultation(event) {
-    event.preventDefault();
+// ============================================================
+// EDIT CONSULTATION
+// ============================================================
 
-    if (!activePatient) {
-        showToast("Error: No active patient selected.", "danger");
+function openEditConsultation(
+    consultId
+) {
+
+    if (!activePatient) return;
+
+    const consult =
+        loadedConsultations.find(
+            c =>
+                Number(c.id) ===
+                Number(consultId)
+        );
+
+    if (!consult) {
+
+        showToast(
+            "Consultation not found.",
+            "danger"
+        );
+
         return;
     }
 
-    const symptoms = document.getElementById('consult-symptoms').value.trim();
-    const diagnosis = document.getElementById('consult-diagnosis').value.trim();
-    const doctorName = document.getElementById('consult-doctor').value.trim();
-    const specialization = document.getElementById('consult-specialization').value.trim();
-    const hospitalName = document.getElementById('consult-hospital').value.trim();
-    const date = document.getElementById('consult-date').value;
-    const treatment = document.getElementById('consult-treatment').value.trim();
-    const notes = document.getElementById('consult-notes').value.trim();
+    editingConsultationId =
+        consult.id;
 
-    if (!symptoms || !diagnosis || !doctorName || !specialization || !hospitalName || !date || !treatment) {
-        showToast("Please fill all required clinical fields.", "danger");
+    switchScreen(
+        "screen-consultation"
+    );
+
+    const patientLabel =
+        document.getElementById(
+            "consultation-active-patient"
+        );
+
+    if (patientLabel) {
+
+        patientLabel.innerText =
+            `${activePatient.name} (${activePatient.id})`;
+    }
+
+    const editId =
+        document.getElementById(
+            "edit-consultation-id"
+        );
+
+    if (editId) {
+        editId.value =
+            consult.id;
+    }
+
+    document.getElementById(
+        "consult-symptoms"
+    ).value =
+        consult.symptoms || "";
+
+    document.getElementById(
+        "consult-diagnosis"
+    ).value =
+        consult.diagnosis || "";
+
+    document.getElementById(
+        "consult-doctor"
+    ).value =
+        consult.doctor_name || "";
+
+    document.getElementById(
+        "consult-specialization"
+    ).value =
+        consult.specialization || "";
+
+    document.getElementById(
+        "consult-hospital"
+    ).value =
+        consult.hospital_name || "";
+
+    document.getElementById(
+        "consult-date"
+    ).value =
+        consult.date || "";
+
+    document.getElementById(
+        "consult-treatment"
+    ).value =
+        consult.treatment || "";
+
+    document.getElementById(
+        "consult-notes"
+    ).value =
+        consult.notes || "";
+
+    const titleText =
+        document.getElementById(
+            "consultation-title-text"
+        );
+
+    if (titleText) {
+        titleText.innerText =
+            "Edit Clinical Consultation";
+    }
+
+    const btnText =
+        document.getElementById(
+            "consultation-btn-text"
+        );
+
+    if (btnText) {
+        btnText.innerText =
+            "Update Consultation";
+    }
+
+    document.getElementById(
+        "page-title"
+    ).innerText =
+        "Edit Consultation";
+
+    document.getElementById(
+        "page-desc"
+    ).innerText =
+        "Update clinical diagnosis, prescribed treatment, and doctor details";
+
+    if (typeof lucide !== "undefined") {
+        lucide.createIcons();
+    }
+}
+
+// ============================================================
+// SAVE / UPDATE CONSULTATION
+// ============================================================
+
+async function handleSaveConsultation(
+    event
+) {
+
+    event.preventDefault();
+
+    if (!activePatient) {
+
+        showToast(
+            "Error: No active patient selected.",
+            "danger"
+        );
+
+        return;
+    }
+
+    const editIdElement =
+        document.getElementById(
+            "edit-consultation-id"
+        );
+
+    const editId =
+        editIdElement?.value.trim() || "";
+
+    const symptoms =
+        document.getElementById(
+            "consult-symptoms"
+        ).value.trim();
+
+    const diagnosis =
+        document.getElementById(
+            "consult-diagnosis"
+        ).value.trim();
+
+    const doctorName =
+        document.getElementById(
+            "consult-doctor"
+        ).value.trim();
+
+    const specialization =
+        document.getElementById(
+            "consult-specialization"
+        ).value.trim();
+
+    const hospitalName =
+        document.getElementById(
+            "consult-hospital"
+        ).value.trim();
+
+    const date =
+        document.getElementById(
+            "consult-date"
+        ).value;
+
+    const treatment =
+        document.getElementById(
+            "consult-treatment"
+        ).value.trim();
+
+    const notes =
+        document.getElementById(
+            "consult-notes"
+        ).value.trim();
+
+    if (
+        !symptoms ||
+        !diagnosis ||
+        !doctorName ||
+        !specialization ||
+        !hospitalName ||
+        !date ||
+        !treatment
+    ) {
+
+        showToast(
+            "Please fill all required clinical fields.",
+            "danger"
+        );
+
         return;
     }
 
     const payload = {
-        date: date,
-        doctor_name: doctorName,
-        specialization: specialization,
-        hospital_name: hospitalName,
-        symptoms: symptoms,
-        diagnosis: diagnosis,
-        treatment: treatment,
-        notes: notes
+
+        date,
+
+        doctor_name:
+            doctorName,
+
+        specialization,
+
+        hospital_name:
+            hospitalName,
+
+        symptoms,
+
+        diagnosis,
+
+        treatment,
+
+        notes
     };
 
     try {
-        if (editingConsultationId) {
-            // UPDATE existing consultation (no duplicate)
-            await apiUpdateConsultation(editingConsultationId, payload);
-            showToast("Consultation updated successfully!");
-            editingConsultationId = null;
+
+        if (
+            editingConsultationId ||
+            editId
+        ) {
+
+            const consultationId =
+                editingConsultationId ||
+                editId;
+
+            await apiUpdateConsultation(
+                consultationId,
+                payload
+            );
+
+            showToast(
+                "Consultation updated successfully!"
+            );
+
         } else {
-            // CREATE new consultation
-            payload.patient_id = activePatient.id;
-            await apiAddConsultation(payload);
-            showToast("Consultation saved successfully!");
+
+            payload.patient_id =
+                activePatient.id;
+
+            await apiAddConsultation(
+                payload
+            );
+
+            showToast(
+                "Consultation saved successfully!"
+            );
         }
-        
-        // Reset form and return to patient history timeline
-        document.getElementById('consultation-form').reset();
-        switchScreen('screen-history');
-        renderCaseHistory();
-    } catch (err) {
-        showToast(err.message || "Failed to save consultation", "danger");
+
+        editingConsultationId =
+            null;
+
+        if (editIdElement) {
+            editIdElement.value = "";
+        }
+
+        switchScreen(
+            "screen-history"
+        );
+
+        await renderCaseHistory();
+
+    } catch (error) {
+
+        console.error(
+            "Consultation save/update error:",
+            error
+        );
+
+        showToast(
+            error.message ||
+            "Failed to save consultation",
+            "danger"
+        );
     }
 }
 
+// ============================================================
+// CANCEL CONSULTATION
+// ============================================================
+
 function cancelAddConsultation() {
+
     editingConsultationId = null;
-    switchScreen('screen-history');
+
+    switchScreen(
+        "screen-history"
+    );
+
     renderCaseHistory();
 }
 
-// Toast Helper
-function showToast(message, type = 'success') {
-    const container = document.getElementById('toast-container');
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    
-    const iconName = type === 'success' ? 'check-circle' : 'alert-circle';
+// ============================================================
+// TOAST
+// ============================================================
+
+function showToast(
+    message,
+    type = "success"
+) {
+
+    const container =
+        document.getElementById(
+            "toast-container"
+        );
+
+    if (!container) {
+
+        console.log(message);
+
+        return;
+    }
+
+    const toast =
+        document.createElement(
+            "div"
+        );
+
+    toast.className =
+        `toast toast-${type}`;
+
+    const iconName =
+        type === "success"
+            ? "check-circle"
+            : "alert-circle";
+
     toast.innerHTML = `
         <i data-lucide="${iconName}"></i>
-        <span>${message}</span>
+        <span>${escapeHtml(message)}</span>
     `;
 
-    container.appendChild(toast);
-    lucide.createIcons();
+    container.appendChild(
+        toast
+    );
 
-    // Fade out and remove
+    if (typeof lucide !== "undefined") {
+        lucide.createIcons();
+    }
+
     setTimeout(() => {
-        toast.style.opacity = '0';
-        toast.style.transition = 'opacity 0.5s ease';
+
+        toast.style.opacity =
+            "0";
+
+        toast.style.transition =
+            "opacity 0.5s ease";
+
         setTimeout(() => {
+
             toast.remove();
+
         }, 500);
+
     }, 3000);
 }
 
-// Formatting helpers
+// ============================================================
+// HELPERS
+// ============================================================
+
 function formatDate(dateStr) {
-    if (!dateStr) return '';
-    
-    // Parse YYYY-MM-DD correctly without timezone shifts
-    const parts = dateStr.split('-');
+
+    if (!dateStr) return "";
+
+    const parts =
+        dateStr.split("-");
+
     if (parts.length === 3) {
-        const year = parseInt(parts[0], 10);
-        const month = parseInt(parts[1], 10) - 1;
-        const day = parseInt(parts[2], 10);
-        const date = new Date(year, month, day);
-        return date.toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric'
-        });
+
+        const year =
+            parseInt(
+                parts[0],
+                10
+            );
+
+        const month =
+            parseInt(
+                parts[1],
+                10
+            ) - 1;
+
+        const day =
+            parseInt(
+                parts[2],
+                10
+            );
+
+        const date =
+            new Date(
+                year,
+                month,
+                day
+            );
+
+        return date.toLocaleDateString(
+            "en-US",
+            {
+                year: "numeric",
+                month: "short",
+                day: "numeric"
+            }
+        );
     }
 
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric'
-    });
+    const date =
+        new Date(dateStr);
+
+    return date.toLocaleDateString(
+        "en-US",
+        {
+            year: "numeric",
+            month: "short",
+            day: "numeric"
+        }
+    );
 }
 
-function truncateText(text, maxChars) {
-    if (!text) return '';
-    if (text.length <= maxChars) return text;
-    return text.substring(0, maxChars) + '...';
+function truncateText(
+    text,
+    maxChars
+) {
+
+    if (!text) return "";
+
+    if (
+        text.length <= maxChars
+    ) {
+        return text;
+    }
+
+    return (
+        text.substring(
+            0,
+            maxChars
+        ) + "..."
+    );
+}
+
+function escapeHtml(value) {
+
+    if (
+        value === null ||
+        value === undefined
+    ) {
+        return "";
+    }
+
+    const div =
+        document.createElement(
+            "div"
+        );
+
+    div.textContent =
+        String(value);
+
+    return div.innerHTML;
 }
