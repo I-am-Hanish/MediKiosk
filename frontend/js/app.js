@@ -729,7 +729,7 @@ async function openScanner() {
 
     const manualInput =
         document.getElementById(
-            "scanner-manual-input"
+            "scanner-manual-id"
         );
 
     if (!modal) return;
@@ -955,7 +955,7 @@ async function handleScannerManualSubmit() {
 
     const manualInput =
         document.getElementById(
-            "scanner-manual-input"
+            "scanner-manual-id"
         );
 
     const inputVal =
@@ -969,6 +969,10 @@ async function handleScannerManualSubmit() {
         );
 
         return;
+    }
+
+    if (manualInput) {
+        manualInput.value = "";
     }
 
     await stopScanner();
@@ -990,6 +994,10 @@ async function handleScannerManualSubmit() {
     }
 
     await searchPatient(inputVal);
+}
+
+function submitScannerManualId() {
+    return handleScannerManualSubmit();
 }
 
 // ============================================================
