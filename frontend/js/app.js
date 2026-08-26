@@ -298,6 +298,19 @@ async function handleRegistration(event) {
         document.getElementById("reg-conditions").value.trim() ||
         "None";
 
+    const email =
+        (document.getElementById("reg-email")?.value || "").trim() || null;
+
+    const patientData = {
+        name,
+        age,
+        gender,
+        phone,
+        email,
+        allergies,
+        conditions
+    };
+
     if (
         !name ||
         isNaN(age) ||
@@ -355,12 +368,17 @@ async function handleRegistration(event) {
             response.patient;
 
         // ====================================================
-        // ONLY QR GENERATION IN THE APPLICATION
-        // QR CONTAINS ONLY PATIENT ID
+        // QR GENERATION
+        // QR encodes the full /report/ URL so scanning with
+        // any phone camera opens the patient's report page
+        // and triggers an automatic email to the patient.
         // ====================================================
 
+        const reportUrl =
+            `${window.location.origin}/report/${encodeURIComponent(registeredPatient.id)}`;
+
         const qrCodeUrl =
-            `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(registeredPatient.id)}`;
+            `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(reportUrl)}`;
 
         document.getElementById("success-patient-id").innerText =
             registeredPatient.id;
@@ -938,8 +956,22 @@ function showScannerFallback() {
 
 async function handleQrSuccess(decodedText) {
 
-    const cleanId =
+    const rawText =
         String(decodedText || "").trim();
+
+    if (!rawText) return;
+
+    // ── Extract patient ID from the report URL encoded in the QR ──
+    // QR encodes: http(s)://host/report/MK-2026-XXXX
+    // Extract just the patient ID so the dashboard can search it.
+    let cleanId = rawText;
+
+    const reportUrlMatch =
+        rawText.match(/\/report\/([A-Z0-9\-]+)$/i);
+
+    if (reportUrlMatch) {
+        cleanId = reportUrlMatch[1].toUpperCase();
+    }
 
     if (!cleanId) return;
 

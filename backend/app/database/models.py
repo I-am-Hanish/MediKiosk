@@ -11,6 +11,7 @@ class Patient(Base):
     age = Column(Integer, nullable=False)
     gender = Column(String, nullable=False)
     phone = Column(String, nullable=False)
+    email = Column(String, nullable=True)  # Optional — used for QR report email delivery
     allergies = Column(Text, default="None")
     conditions = Column(Text, default="None")
     summary = Column(Text, default="No consultation history available yet.")

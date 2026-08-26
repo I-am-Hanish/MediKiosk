@@ -17,6 +17,7 @@ class PatientCreate(BaseModel):
     age: int = Field(..., ge=0, le=130)
     gender: str = Field(..., min_length=1)
     phone: str = Field(..., pattern=r"^\d{10}$")
+    email: Optional[str] = None          # Optional — used for QR report delivery
     allergies: Optional[str] = "None"
     conditions: Optional[str] = "None"
 
@@ -125,6 +126,7 @@ async def register_patient(patient_data: PatientCreate, db: AsyncSession = Depen
                 age=patient_data.age,
                 gender=patient_data.gender.strip(),
                 phone=patient_data.phone.strip(),
+                email=(patient_data.email or "").strip() or None,
                 allergies=patient_data.allergies.strip() if patient_data.allergies else "None",
                 conditions=patient_data.conditions.strip() if patient_data.conditions else "None",
                 summary="No consultation history available yet."
@@ -141,6 +143,7 @@ async def register_patient(patient_data: PatientCreate, db: AsyncSession = Depen
                     "age": new_patient.age,
                     "gender": new_patient.gender,
                     "phone": new_patient.phone,
+                    "email": new_patient.email,
                     "allergies": new_patient.allergies,
                     "conditions": new_patient.conditions,
                     "summary": new_patient.summary
@@ -187,6 +190,7 @@ async def search_patient(id: str = Query(...), db: AsyncSession = Depends(get_db
         "age": patient.age,
         "gender": patient.gender,
         "phone": patient.phone,
+        "email": patient.email,
         "allergies": patient.allergies,
         "conditions": patient.conditions,
         "summary": patient.summary
@@ -231,6 +235,7 @@ async def get_patient_history(patient_id: str, db: AsyncSession = Depends(get_db
             "age": patient.age,
             "gender": patient.gender,
             "phone": patient.phone,
+            "email": patient.email,
             "allergies": patient.allergies,
             "conditions": patient.conditions,
             "summary": dynamic_summary

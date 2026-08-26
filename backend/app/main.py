@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import patient, interview, doctor
+from app.api import patient, interview, doctor, report
 
 app = FastAPI(title="MediKiosk Backend", version="0.1.0")
 
@@ -32,6 +32,15 @@ app.include_router(
     prefix="/api/doctor",
     tags=["doctor"]
 )
+
+# Report router — must be registered BEFORE the static files mount
+# so /report/{patient_id} is matched by FastAPI before the static catch-all
+app.include_router(
+    report.router,
+    prefix="/report",
+    tags=["report"]
+)
+
 
 # Startup event to initialize DB
 @app.on_event("startup")
