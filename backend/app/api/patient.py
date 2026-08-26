@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from app.database import get_db
@@ -77,50 +78,89 @@ async def patient_home():
 
 @router.post("/register")
 async def register_patient(patient_data: PatientCreate, db: AsyncSession = Depends(get_db)):
-    try:
-        # Determine unique Patient ID
-        result = await db.execute(select(func.count(Patient.id)))
-        count = result.scalar() or 0
-        patient_id = f"MK-2026-{1001 + count}"
-        
-        # Guard against collisions by checking existence
-        while True:
-            existing = await db.get(Patient, patient_id)
-            if not existing:
-                break
-            count += 1
-            patient_id = f"MK-2026-{1001 + count}"
+    max_retries = 10
+    last_error = None
 
-        new_patient = Patient(
-            id=patient_id,
-            name=patient_data.name.strip(),
-            age=patient_data.age,
-            gender=patient_data.gender.strip(),
-            phone=patient_data.phone.strip(),
-            allergies=patient_data.allergies.strip() if patient_data.allergies else "None",
-            conditions=patient_data.conditions.strip() if patient_data.conditions else "None",
-            summary="No consultation history available yet."
-        )
-        db.add(new_patient)
-        await db.commit()
-        await db.refresh(new_patient)
-        
-        return {
-            "status": "success",
-            "patient": {
-                "id": new_patient.id,
-                "name": new_patient.name,
-                "age": new_patient.age,
-                "gender": new_patient.gender,
-                "phone": new_patient.phone,
-                "allergies": new_patient.allergies,
-                "conditions": new_patient.conditions,
-                "summary": new_patient.summary
+    for attempt in range(max_retries):
+        try:
+            # 1. Fetch all existing patient IDs from SQLite
+            result = await db.execute(select(Patient.id))
+            all_ids = result.scalars().all()
+
+            existing_ids_set = set()
+            max_suffix = 1000  # Default base so first patient is MK-2026-1001
+
+            for pid in all_ids:
+                if not pid:
+                    continue
+                pid_clean = pid.strip().upper()
+                existing_ids_set.add(pid_clean)
+                try:
+                    parts = pid.strip().split("-")
+                    # Check for format MK-2026-XXXX
+                    if len(parts) >= 3 and parts[0].upper() == "MK" and parts[1] == "2026":
+                        suffix_val = int(parts[2])
+                        if suffix_val > max_suffix:
+                            max_suffix = suffix_val
+                except (ValueError, IndexError):
+                    continue
+
+            # 2. Determine next candidate ID
+            candidate_suffix = max(max_suffix, 1000) + 1 + attempt
+            candidate_id = f"MK-2026-{candidate_suffix}"
+
+            while candidate_id.upper() in existing_ids_set:
+                candidate_suffix += 1
+                candidate_id = f"MK-2026-{candidate_suffix}"
+
+            # 3. Check SQLite database to confirm candidate ID does not exist
+            existing = await db.get(Patient, candidate_id)
+            if existing:
+                continue
+
+            # 4. Insert new patient record
+            new_patient = Patient(
+                id=candidate_id,
+                name=patient_data.name.strip(),
+                age=patient_data.age,
+                gender=patient_data.gender.strip(),
+                phone=patient_data.phone.strip(),
+                allergies=patient_data.allergies.strip() if patient_data.allergies else "None",
+                conditions=patient_data.conditions.strip() if patient_data.conditions else "None",
+                summary="No consultation history available yet."
+            )
+            db.add(new_patient)
+            await db.commit()
+            await db.refresh(new_patient)
+
+            return {
+                "status": "success",
+                "patient": {
+                    "id": new_patient.id,
+                    "name": new_patient.name,
+                    "age": new_patient.age,
+                    "gender": new_patient.gender,
+                    "phone": new_patient.phone,
+                    "allergies": new_patient.allergies,
+                    "conditions": new_patient.conditions,
+                    "summary": new_patient.summary
+                }
             }
-        }
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=500, detail=f"Database error during registration: {str(e)}")
+        except IntegrityError as ie:
+            await db.rollback()
+            last_error = ie
+            continue
+        except HTTPException:
+            await db.rollback()
+            raise
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(status_code=500, detail=f"Database error during registration: {str(e)}")
+
+    raise HTTPException(
+        status_code=500,
+        detail=f"Unable to generate a unique Patient ID after multiple attempts ({str(last_error)})."
+    )
 
 @router.get("/search")
 async def search_patient(id: str = Query(...), db: AsyncSession = Depends(get_db)):

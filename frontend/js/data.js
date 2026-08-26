@@ -15,8 +15,16 @@ async function apiRegisterPatient(patientData) {
         body: JSON.stringify(patientData)
     });
     if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.detail || "Registration failed. Please verify inputs.");
+        let errorMsg = "Registration failed. Please verify inputs.";
+        try {
+            const err = await response.json();
+            if (err && err.detail) {
+                errorMsg = err.detail;
+            }
+        } catch (_) {
+            errorMsg = response.statusText || errorMsg;
+        }
+        throw new Error(errorMsg);
     }
     return await response.json();
 }

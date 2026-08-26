@@ -260,6 +260,8 @@ function tryNavigateConsultation() {
 // PATIENT REGISTRATION
 // ============================================================
 
+let isRegistering = false;
+
 async function handleRegistration(event) {
 
     if (event) {
@@ -267,6 +269,10 @@ async function handleRegistration(event) {
         if (typeof event.stopPropagation === "function") {
             event.stopPropagation();
         }
+    }
+
+    if (isRegistering) {
+        return;
     }
 
     const name =
@@ -334,17 +340,19 @@ async function handleRegistration(event) {
 
     try {
 
+        isRegistering = true;
+
         const response =
             await apiRegisterPatient(patientData);
 
-        const registeredPatient =
-            response.patient;
-
-        if (!registeredPatient || !registeredPatient.id) {
+        if (!response || response.status !== "success" || !response.patient || !response.patient.id) {
             throw new Error(
-                "Invalid patient data returned by server."
+                "Registration failed. Valid confirmation not received from server."
             );
         }
+
+        const registeredPatient =
+            response.patient;
 
         // ====================================================
         // ONLY QR GENERATION IN THE APPLICATION
@@ -400,6 +408,8 @@ async function handleRegistration(event) {
             "Registration failed",
             "danger"
         );
+    } finally {
+        isRegistering = false;
     }
 }
 
@@ -2101,18 +2111,10 @@ function escapeHtml(value) {
 }
 
 // ============================================================
-// PATIENT REGISTRATION PHONE INPUT RESTRICTIONS & FORM BINDING
+// PATIENT REGISTRATION PHONE INPUT RESTRICTIONS
 // ============================================================
 
 document.addEventListener("DOMContentLoaded", () => {
-    const regForm = document.getElementById("patient-registration-form");
-    if (regForm) {
-        regForm.addEventListener("submit", function (e) {
-            e.preventDefault();
-            handleRegistration(e);
-        });
-    }
-
     const regPhone = document.getElementById("reg-phone");
     if (regPhone) {
         regPhone.addEventListener("input", function () {
