@@ -1,10 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>MediKiosk — Smart Healthcare Portal</title>
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <link rel="shortcut icon" href="favicon.ico">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
 
     <!-- CSS -->
     <link rel="stylesheet" href="css/styles.css">
@@ -38,8 +45,7 @@
 
             <!-- Patient Registration -->
             <li class="nav-item active" id="nav-registration">
-                <button type="button"
-                        onclick="switchScreen('screen-registration')">
+                <button type="button" onclick="switchScreen('screen-registration')">
 
                     <i data-lucide="user-plus"></i>
                     Patient Registration
@@ -49,8 +55,7 @@
 
             <!-- Doctor Dashboard -->
             <li class="nav-item" id="nav-dashboard">
-                <button type="button"
-                        onclick="switchScreen('screen-dashboard')">
+                <button type="button" onclick="switchScreen('screen-dashboard')">
 
                     <i data-lucide="layout-dashboard"></i>
                     Doctor Dashboard
@@ -60,8 +65,7 @@
 
             <!-- Patient Case History -->
             <li class="nav-item disabled" id="nav-history">
-                <button type="button"
-                        onclick="tryNavigateHistory()">
+                <button type="button" onclick="tryNavigateHistory()">
 
                     <i data-lucide="folder-heart"></i>
                     Patient Case History
@@ -71,8 +75,7 @@
 
             <!-- Add Consultation -->
             <li class="nav-item disabled" id="nav-consultation">
-                <button type="button"
-                        onclick="tryNavigateConsultation()">
+                <button type="button" onclick="tryNavigateConsultation()">
 
                     <i data-lucide="plus-circle"></i>
                     Add Consultation
@@ -117,20 +120,13 @@
 
             </div>
 
-            <div
-                class="kiosk-badge"
-                id="kiosk-badge-status"
-                style="
+            <div class="kiosk-badge" id="kiosk-badge-status" style="
                     background-color: var(--success-bg);
                     color: var(--success);
                     border-color: rgba(13, 148, 136, 0.25);
-                "
-            >
+                ">
 
-                <span
-                    class="badge-pulse"
-                    style="background-color: var(--success);"
-                ></span>
+                <span class="badge-pulse" style="background-color: var(--success);"></span>
 
                 MediKiosk Live API
 
@@ -143,17 +139,11 @@
              SCREEN 1 — PATIENT REGISTRATION
         ====================================================== -->
 
-        <section
-            id="screen-registration"
-            class="screen active-screen"
-        >
+        <section id="screen-registration" class="screen active-screen">
 
             <!-- Registration Form -->
 
-            <div
-                id="registration-form-card"
-                class="card"
-            >
+            <div id="registration-form-card" class="card">
 
                 <div class="card-header-accent"></div>
 
@@ -166,10 +156,7 @@
                 </h3>
 
 
-                <form
-                    id="patient-registration-form"
-                    onsubmit="handleRegistration(event)"
-                >
+                <form id="patient-registration-form" onsubmit="handleRegistration(event)">
 
                     <div class="form-grid">
 
@@ -182,12 +169,7 @@
                                 <span style="color: var(--danger);">*</span>
                             </label>
 
-                            <input
-                                type="text"
-                                id="reg-name"
-                                placeholder="Enter patient's full name"
-                                required
-                            >
+                            <input type="text" id="reg-name" placeholder="Enter patient's full name" required>
 
                         </div>
 
@@ -201,14 +183,7 @@
                                 <span style="color: var(--danger);">*</span>
                             </label>
 
-                            <input
-                                type="number"
-                                id="reg-age"
-                                placeholder="Enter age"
-                                min="0"
-                                max="130"
-                                required
-                            >
+                            <input type="number" id="reg-age" placeholder="Enter age" min="0" max="130" required>
 
                         </div>
 
@@ -224,11 +199,7 @@
 
                             <select id="reg-gender" required>
 
-                                <option
-                                    value=""
-                                    disabled
-                                    selected
-                                >
+                                <option value="" disabled selected>
                                     Select gender
                                 </option>
 
@@ -258,12 +229,10 @@
                                 <span style="color: var(--danger);">*</span>
                             </label>
 
-                            <input
-                                type="tel"
-                                id="reg-phone"
-                                placeholder="Enter 10-digit mobile number"
-                                required
-                            >
+                            <input type="tel" id="reg-phone" placeholder="Enter 10-digit mobile number"
+                                pattern="[0-9]{10}" maxlength="10" inputmode="numeric"
+                                title="Phone number must be exactly 10 digits"
+                                oninput="this.value = this.value.replace(/\D/g, '').slice(0, 10);" required>
 
                         </div>
 
@@ -276,10 +245,8 @@
                                 Known Allergies
                             </label>
 
-                            <textarea
-                                id="reg-allergies"
-                                placeholder="List any food or drug allergies, or enter 'None'"
-                            ></textarea>
+                            <textarea id="reg-allergies"
+                                placeholder="List any food or drug allergies, or enter 'None'"></textarea>
 
                         </div>
 
@@ -292,10 +259,8 @@
                                 Existing Medical Conditions
                             </label>
 
-                            <textarea
-                                id="reg-conditions"
-                                placeholder="List existing medical conditions, or enter 'None'"
-                            ></textarea>
+                            <textarea id="reg-conditions"
+                                placeholder="List existing medical conditions, or enter 'None'"></textarea>
 
                         </div>
 
@@ -304,10 +269,7 @@
 
                     <div class="btn-group">
 
-                        <button
-                            type="submit"
-                            class="btn btn-primary"
-                        >
+                        <button type="submit" class="btn btn-primary">
 
                             <i data-lucide="user-check"></i>
 
@@ -316,10 +278,7 @@
                         </button>
 
 
-                        <button
-                            type="reset"
-                            class="btn btn-secondary"
-                        >
+                        <button type="reset" class="btn btn-secondary">
                             Clear Form
                         </button>
 
@@ -332,22 +291,15 @@
 
             <!-- Registration Success -->
 
-            <div
-                id="registration-success-card"
-                class="card"
-                style="display: none;"
-            >
+            <div id="registration-success-card" class="card" style="display: none;">
 
-                <div
-                    class="card-header-accent"
-                    style="
+                <div class="card-header-accent" style="
                         background: linear-gradient(
                             90deg,
                             var(--success),
                             #34d399
                         );
-                    "
-                ></div>
+                    "></div>
 
 
                 <div class="success-panel">
@@ -378,27 +330,17 @@
                                 MediKiosk Patient ID
                             </div>
 
-                            <div
-                                class="id-value"
-                                id="success-patient-id"
-                            >
+                            <div class="id-value" id="success-patient-id">
                                 MK-2026-0000
                             </div>
 
                         </div>
 
 
-                        <button
-                            type="button"
-                            class="btn btn-secondary"
-                            onclick="copyPatientId()"
-                            title="Copy Patient ID"
-                        >
+                        <button type="button" class="btn btn-secondary" onclick="copyPatientId()"
+                            title="Copy Patient ID">
 
-                            <i
-                                data-lucide="copy"
-                                id="copy-icon"
-                            ></i>
+                            <i data-lucide="copy" id="copy-icon"></i>
 
                         </button>
 
@@ -409,22 +351,14 @@
 
                     <div class="qr-code-box">
 
-                        <img
-                            id="success-qr-code"
-                            src=""
-                            alt="Patient QR Code"
-                        >
+                        <img id="success-qr-code" src="" alt="Patient QR Code">
 
                     </div>
 
 
                     <div class="btn-group">
 
-                        <button
-                            type="button"
-                            class="btn btn-teal"
-                            onclick="goToDashboardWithId()"
-                        >
+                        <button type="button" class="btn btn-teal" onclick="goToDashboardWithId()">
 
                             <i data-lucide="search"></i>
 
@@ -433,11 +367,7 @@
                         </button>
 
 
-                        <button
-                            type="button"
-                            class="btn btn-outline"
-                            onclick="resetRegistrationForm()"
-                        >
+                        <button type="button" class="btn btn-outline" onclick="resetRegistrationForm()">
 
                             <i data-lucide="user-plus"></i>
 
@@ -458,10 +388,7 @@
              SCREEN 2 — DOCTOR DASHBOARD
         ====================================================== -->
 
-        <section
-            id="screen-dashboard"
-            class="screen"
-        >
+        <section id="screen-dashboard" class="screen">
 
             <div class="card">
 
@@ -483,29 +410,17 @@
 
                         <i data-lucide="search"></i>
 
-                        <input
-                            type="text"
-                            id="dashboard-search-id"
-                            placeholder="Enter Patient ID"
-                        >
+                        <input type="text" id="dashboard-search-id" placeholder="Enter Patient ID">
 
                     </div>
 
 
-                    <button
-                        type="button"
-                        class="btn btn-primary"
-                        onclick="searchPatient()"
-                    >
+                    <button type="button" class="btn btn-primary" onclick="searchPatient()">
                         Search Patient
                     </button>
 
 
-                    <button
-                        type="button"
-                        class="btn btn-teal"
-                        onclick="openScanner()"
-                    >
+                    <button type="button" class="btn btn-teal" onclick="openScanner()">
 
                         <i data-lucide="qr-code"></i>
 
@@ -518,10 +433,7 @@
 
                 <!-- Patient Profile -->
 
-                <div
-                    id="dashboard-patient-card"
-                    class="patient-quick-card"
-                >
+                <div id="dashboard-patient-card" class="patient-quick-card">
 
                     <div class="quick-profile-header">
 
@@ -534,10 +446,7 @@
                         </div>
 
 
-                        <span
-                            class="kiosk-badge"
-                            id="quick-gender-badge"
-                        ></span>
+                        <span class="kiosk-badge" id="quick-gender-badge"></span>
 
                     </div>
 
@@ -550,10 +459,7 @@
                                 Age
                             </div>
 
-                            <div
-                                class="quick-field-value"
-                                id="quick-age"
-                            ></div>
+                            <div class="quick-field-value" id="quick-age"></div>
 
                         </div>
 
@@ -564,10 +470,7 @@
                                 Gender
                             </div>
 
-                            <div
-                                class="quick-field-value"
-                                id="quick-gender"
-                            ></div>
+                            <div class="quick-field-value" id="quick-gender"></div>
 
                         </div>
 
@@ -578,25 +481,16 @@
                                 Phone
                             </div>
 
-                            <div
-                                class="quick-field-value"
-                                id="quick-phone"
-                            ></div>
+                            <div class="quick-field-value" id="quick-phone"></div>
 
                         </div>
 
 
                         <!-- Allergy Information -->
 
-                        <div
-                            id="quick-allergy-box"
-                            class="quick-critical-box"
-                        >
+                        <div id="quick-allergy-box" class="quick-critical-box">
 
-                            <i
-                                data-lucide="alert-triangle"
-                                id="quick-allergy-icon"
-                            ></i>
+                            <i data-lucide="alert-triangle" id="quick-allergy-icon"></i>
 
                             <div class="quick-critical-content">
 
@@ -613,11 +507,7 @@
                     </div>
 
 
-                    <button
-                        type="button"
-                        class="btn btn-primary"
-                        onclick="goToCaseHistory()"
-                    >
+                    <button type="button" class="btn btn-primary" onclick="goToCaseHistory()">
 
                         View Detailed Case History
 
@@ -636,10 +526,7 @@
              SCREEN 3 — PATIENT CASE HISTORY
         ====================================================== -->
 
-        <section
-            id="screen-history"
-            class="screen"
-        >
+        <section id="screen-history" class="screen">
 
             <!-- Patient Banner -->
 
@@ -701,14 +588,11 @@
                 </div>
 
 
-                <div
-                    class="kiosk-badge"
-                    style="
+                <div class="kiosk-badge" style="
                         background-color: rgba(255,255,255,0.15);
                         color: #ffffff;
                         border-color: rgba(255,255,255,0.25);
-                    "
-                >
+                    ">
 
                     <i data-lucide="shield-check"></i>
 
@@ -721,11 +605,7 @@
 
             <!-- Allergy Alert -->
 
-            <div
-                class="allergy-alert-banner"
-                id="history-allergy-banner"
-                style="display: none;"
-            >
+            <div class="allergy-alert-banner" id="history-allergy-banner" style="display: none;">
 
                 <i data-lucide="shield-alert"></i>
 
@@ -735,10 +615,7 @@
                         Critical Allergy Warning
                     </div>
 
-                    <div
-                        class="allergy-alert-text"
-                        id="history-allergy-text"
-                    ></div>
+                    <div class="allergy-alert-text" id="history-allergy-text"></div>
 
                 </div>
 
@@ -755,15 +632,9 @@
 
                     <!-- Chronic Conditions -->
 
-                    <div
-                        class="card"
-                        style="margin-bottom: 0;"
-                    >
+                    <div class="card" style="margin-bottom: 0;">
 
-                        <div
-                            class="card-header-accent"
-                            style="background-color: var(--accent-teal);"
-                        ></div>
+                        <div class="card-header-accent" style="background-color: var(--accent-teal);"></div>
 
                         <h3 class="card-title">
 
@@ -776,10 +647,7 @@
 
                         <div class="medical-card-content">
 
-                            <p
-                                class="medical-summary-text"
-                                id="history-conditions"
-                            ></p>
+                            <p class="medical-summary-text" id="history-conditions"></p>
 
                         </div>
 
@@ -788,15 +656,9 @@
 
                     <!-- Smart Summary -->
 
-                    <div
-                        class="card"
-                        style="margin-bottom: 0;"
-                    >
+                    <div class="card" style="margin-bottom: 0;">
 
-                        <div
-                            class="card-header-accent"
-                            style="background-color: var(--accent-blue);"
-                        ></div>
+                        <div class="card-header-accent" style="background-color: var(--accent-blue);"></div>
 
 
                         <h3 class="card-title">
@@ -819,10 +681,7 @@
                             </div>
 
 
-                            <div
-                                class="smart-summary-content"
-                                id="history-smart-summary"
-                            >
+                            <div class="smart-summary-content" id="history-smart-summary">
                                 No consultation history available yet.
                             </div>
 
@@ -844,11 +703,7 @@
                         </h3>
 
 
-                        <button
-                            type="button"
-                            class="btn btn-primary"
-                            onclick="goToAddConsultation()"
-                        >
+                        <button type="button" class="btn btn-primary" onclick="goToAddConsultation()">
 
                             <i data-lucide="plus"></i>
 
@@ -859,10 +714,7 @@
                     </div>
 
 
-                    <div
-                        class="timeline"
-                        id="patient-timeline"
-                    >
+                    <div class="timeline" id="patient-timeline">
                         <!-- Dynamic timeline entries -->
                     </div>
 
@@ -877,10 +729,7 @@
              SCREEN 4 — ADD / EDIT CONSULTATION
         ====================================================== -->
 
-        <section
-            id="screen-consultation"
-            class="screen"
-        >
+        <section id="screen-consultation" class="screen">
 
             <div class="card">
 
@@ -889,10 +738,7 @@
 
                 <!-- FIXED: Only one H3 -->
 
-                <h3
-                    class="card-title"
-                    id="consultation-card-title"
-                >
+                <h3 class="card-title" id="consultation-card-title">
 
                     <i data-lucide="file-signature"></i>
 
@@ -905,20 +751,14 @@
 
                 <!-- Active Patient -->
 
-                <div
-                    class="smart-summary-box"
-                    style="
+                <div class="smart-summary-box" style="
                         margin-bottom: 25px;
                         border-left-color: var(--accent-blue);
                         background-color: #f0f9ff;
                         color: #0369a1;
-                    "
-                >
+                    ">
 
-                    <div
-                        class="smart-summary-header"
-                        style="color: #0369a1;"
-                    >
+                    <div class="smart-summary-header" style="color: #0369a1;">
 
                         <i data-lucide="user"></i>
 
@@ -927,30 +767,19 @@
                     </div>
 
 
-                    <div
-                        class="smart-summary-content"
-                        style="
+                    <div class="smart-summary-content" style="
                             color: #0c4a6e;
                             font-weight: 600;
-                        "
-                        id="consultation-active-patient"
-                    ></div>
+                        " id="consultation-active-patient"></div>
 
                 </div>
 
 
                 <!-- Consultation Form -->
 
-                <form
-                    id="consultation-form"
-                    onsubmit="handleSaveConsultation(event)"
-                >
+                <form id="consultation-form" onsubmit="handleSaveConsultation(event)">
 
-                    <input
-                        type="hidden"
-                        id="edit-consultation-id"
-                        value=""
-                    >
+                    <input type="hidden" id="edit-consultation-id" value="">
 
 
                     <div class="form-grid">
@@ -969,11 +798,8 @@
 
                             </label>
 
-                            <textarea
-                                id="consult-symptoms"
-                                placeholder="Enter patient reported symptoms"
-                                required
-                            ></textarea>
+                            <textarea id="consult-symptoms" placeholder="Enter patient reported symptoms"
+                                required></textarea>
 
                         </div>
 
@@ -992,12 +818,7 @@
 
                             </label>
 
-                            <input
-                                type="text"
-                                id="consult-diagnosis"
-                                placeholder="Enter clinical diagnosis"
-                                required
-                            >
+                            <input type="text" id="consult-diagnosis" placeholder="Enter clinical diagnosis" required>
 
                         </div>
 
@@ -1016,12 +837,7 @@
 
                             </label>
 
-                            <input
-                                type="text"
-                                id="consult-doctor"
-                                placeholder="Enter attending doctor name"
-                                required
-                            >
+                            <input type="text" id="consult-doctor" placeholder="Enter attending doctor name" required>
 
                         </div>
 
@@ -1040,12 +856,8 @@
 
                             </label>
 
-                            <input
-                                type="text"
-                                id="consult-specialization"
-                                placeholder="Enter doctor specialization"
-                                required
-                            >
+                            <input type="text" id="consult-specialization" placeholder="Enter doctor specialization"
+                                required>
 
                         </div>
 
@@ -1064,12 +876,7 @@
 
                             </label>
 
-                            <input
-                                type="text"
-                                id="consult-hospital"
-                                placeholder="Enter hospital/clinic name"
-                                required
-                            >
+                            <input type="text" id="consult-hospital" placeholder="Enter hospital/clinic name" required>
 
                         </div>
 
@@ -1088,11 +895,7 @@
 
                             </label>
 
-                            <input
-                                type="date"
-                                id="consult-date"
-                                required
-                            >
+                            <input type="date" id="consult-date" required>
 
                         </div>
 
@@ -1111,11 +914,8 @@
 
                             </label>
 
-                            <textarea
-                                id="consult-treatment"
-                                placeholder="List prescribed medicines, dosage, and therapies"
-                                required
-                            ></textarea>
+                            <textarea id="consult-treatment"
+                                placeholder="List prescribed medicines, dosage, and therapies" required></textarea>
 
                         </div>
 
@@ -1128,10 +928,8 @@
                                 Doctor Notes / Remarks
                             </label>
 
-                            <textarea
-                                id="consult-notes"
-                                placeholder="Enter additional notes, cautions, follow-up dates, or test orders"
-                            ></textarea>
+                            <textarea id="consult-notes"
+                                placeholder="Enter additional notes, cautions, follow-up dates, or test orders"></textarea>
 
                         </div>
 
@@ -1140,11 +938,7 @@
 
                     <div class="btn-group">
 
-                        <button
-                            type="submit"
-                            class="btn btn-primary"
-                            id="consultation-save-btn"
-                        >
+                        <button type="submit" class="btn btn-primary" id="consultation-save-btn">
 
                             <i data-lucide="save"></i>
 
@@ -1155,11 +949,7 @@
                         </button>
 
 
-                        <button
-                            type="button"
-                            class="btn btn-secondary"
-                            onclick="cancelAddConsultation()"
-                        >
+                        <button type="button" class="btn btn-secondary" onclick="cancelAddConsultation()">
                             Cancel & Back
                         </button>
 
@@ -1178,10 +968,7 @@
          QR SCANNER MODAL
     ========================================================== -->
 
-    <div
-        id="scanner-modal"
-        class="modal-overlay"
-    >
+    <div id="scanner-modal" class="modal-overlay">
 
         <div class="scanner-modal">
 
@@ -1194,11 +981,7 @@
                 </h3>
 
 
-                <button
-                    type="button"
-                    class="btn-close"
-                    onclick="closeScanner()"
-                >
+                <button type="button" class="btn-close" onclick="closeScanner()">
 
                     <i data-lucide="x"></i>
 
@@ -1213,24 +996,16 @@
 
                 <!-- HTML5 QR Reader -->
 
-                <div
-                    id="qr-reader"
-                    style="
+                <div id="qr-reader" style="
                         width: 100%;
                         height: 100%;
                         display: none;
-                    "
-                ></div>
+                    "></div>
 
 
                 <!-- Camera Video -->
 
-                <video
-                    id="scanner-video"
-                    playsinline
-                    autoplay
-                    muted
-                    style="
+                <video id="scanner-video" playsinline autoplay muted style="
                         width: 100%;
                         height: 100%;
                         object-fit: cover;
@@ -1238,92 +1013,62 @@
                         top: 0;
                         left: 0;
                         display: none;
-                    "
-                ></video>
+                    "></video>
 
 
                 <!-- Scanner Corners -->
 
-                <div
-                    class="scanner-corner corner-tl"
-                ></div>
+                <div class="scanner-corner corner-tl"></div>
 
-                <div
-                    class="scanner-corner corner-tr"
-                ></div>
+                <div class="scanner-corner corner-tr"></div>
 
-                <div
-                    class="scanner-corner corner-bl"
-                ></div>
+                <div class="scanner-corner corner-bl"></div>
 
-                <div
-                    class="scanner-corner corner-br"
-                ></div>
+                <div class="scanner-corner corner-br"></div>
 
 
                 <!-- Scanner Laser -->
 
-                <div
-                    class="scanner-laser"
-                    id="scanner-laser"
-                ></div>
+                <div class="scanner-laser" id="scanner-laser"></div>
 
 
                 <!-- Camera Placeholder -->
 
-                <i
-                    data-lucide="aperture"
-                    class="scanner-camera-icon"
-                    id="scanner-camera-icon"
-                ></i>
+                <i data-lucide="aperture" class="scanner-camera-icon" id="scanner-camera-icon"></i>
 
             </div>
 
 
             <!-- Scanner Status -->
 
-            <div
-                class="scanner-status scanning"
-                id="scanner-status"
-            >
+            <div class="scanner-status scanning" id="scanner-status">
                 Initializing camera scanner...
             </div>
 
 
             <!-- Manual ID Input -->
 
-            <div
-                class="scanner-manual-entry"
-                style="
+            <div class="scanner-manual-entry" style="
                     width: 100%;
                     margin-top: 12px;
-                "
-            >
+                ">
 
-                <p
-                    style="
+                <p style="
                         font-size: 0.8rem;
                         color: var(--text-muted);
                         text-align: center;
                         margin-bottom: 8px;
-                    "
-                >
+                    ">
                     Align QR code in viewfinder or enter Patient ID manually:
                 </p>
 
 
-                <div
-                    style="
+                <div style="
                         display: flex;
                         gap: 8px;
-                    "
-                >
+                    ">
 
-                    <input
-                        type="text"
-                        id="scanner-manual-id"
-                        placeholder="e.g. MK-2026-1005"
-                        style="
+                    <input type="text" id="scanner-manual-id" placeholder="e.g. MK-2026-1005" style="
                             flex: 1;
                             padding: 9px 12px;
                             border: 1.5px solid var(--border-color);
@@ -1332,16 +1077,10 @@
                             font-family: var(--font-body);
                             background: var(--bg-card);
                             color: var(--text-main);
-                        "
-                        onkeypress="handleScannerKeypress(event)"
-                    >
+                        " onkeypress="handleScannerKeypress(event)">
 
 
-                    <button
-                        type="button"
-                        class="btn btn-primary btn-sm"
-                        onclick="submitScannerManualId()"
-                    >
+                    <button type="button" class="btn btn-primary btn-sm" onclick="submitScannerManualId()">
                         Search
                     </button>
 
@@ -1352,15 +1091,13 @@
 
             <!-- Scanner Help -->
 
-            <p
-                style="
+            <p style="
                     font-size: 0.8rem;
                     color: var(--text-muted);
                     text-align: center;
                     max-width: 320px;
                     margin-top: 10px;
-                "
-            >
+                ">
                 Align the patient card QR code in front of the camera
                 or enter the Patient ID manually.
             </p>
@@ -1374,10 +1111,7 @@
          TOAST CONTAINER
     ========================================================== -->
 
-    <div
-        class="toast-container"
-        id="toast-container"
-    ></div>
+    <div class="toast-container" id="toast-container"></div>
 
 
     <!-- =========================================================
@@ -1399,4 +1133,5 @@
     </script>
 
 </body>
+
 </html>

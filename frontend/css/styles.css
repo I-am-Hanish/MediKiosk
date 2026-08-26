@@ -6,22 +6,36 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap');
 
 :root {
-    --primary: #0f172a;       /* Deep Slate Blue */
-    --primary-light: #1e293b; /* Dark sidebar active states */
-    --accent-blue: #0284c7;   /* Medical Tech Blue */
+    --primary: #0f172a;
+    /* Deep Slate Blue */
+    --primary-light: #1e293b;
+    /* Dark sidebar active states */
+    --accent-blue: #0284c7;
+    /* Medical Tech Blue */
     --accent-blue-glow: rgba(2, 132, 199, 0.15);
-    --accent-teal: #0f766e;   /* Clinical Teal */
+    --accent-teal: #0f766e;
+    /* Clinical Teal */
     --accent-teal-glow: rgba(15, 118, 110, 0.15);
-    --bg-main: #f8fafc;       /* Light neutral clinical background */
-    --bg-card: #ffffff;       /* Card background */
-    --border-color: #e2e8f0;  /* Clean grey border */
-    --border-focus: #38bdf8;   /* Input focus */
-    --text-main: #0f172a;     /* High-contrast dark grey for readability */
-    --text-muted: #64748b;    /* Slate 500 for secondary text */
-    --success: #0d9488;       /* Success teal */
-    --success-bg: #f0fdfa;    /* Light teal for success panels */
-    --danger: #e11d48;        /* Rose red for allergies and critical warnings */
-    --danger-bg: #fff1f2;     /* High-visibility light red warning bg */
+    --bg-main: #f8fafc;
+    /* Light neutral clinical background */
+    --bg-card: #ffffff;
+    /* Card background */
+    --border-color: #e2e8f0;
+    /* Clean grey border */
+    --border-focus: #38bdf8;
+    /* Input focus */
+    --text-main: #0f172a;
+    /* High-contrast dark grey for readability */
+    --text-muted: #64748b;
+    /* Slate 500 for secondary text */
+    --success: #0d9488;
+    /* Success teal */
+    --success-bg: #f0fdfa;
+    /* Light teal for success panels */
+    --danger: #e11d48;
+    /* Rose red for allergies and critical warnings */
+    --danger-bg: #fff1f2;
+    /* High-visibility light red warning bg */
     --font-header: 'Outfit', sans-serif;
     --font-body: 'Inter', sans-serif;
     --border-radius-sm: 8px;
@@ -240,9 +254,20 @@ header {
 }
 
 @keyframes pulse {
-    0% { transform: scale(0.9); opacity: 0.6; }
-    50% { transform: scale(1.1); opacity: 1; }
-    100% { transform: scale(0.9); opacity: 0.6; }
+    0% {
+        transform: scale(0.9);
+        opacity: 0.6;
+    }
+
+    50% {
+        transform: scale(1.1);
+        opacity: 1;
+    }
+
+    100% {
+        transform: scale(0.9);
+        opacity: 0.6;
+    }
 }
 
 /* Screen Transitions */
@@ -318,8 +343,8 @@ header {
     color: var(--primary-light);
 }
 
-.form-group input, 
-.form-group select, 
+.form-group input,
+.form-group select,
 .form-group textarea {
     font-family: var(--font-body);
     font-size: 0.95rem;
@@ -332,8 +357,8 @@ header {
     outline: none;
 }
 
-.form-group input:focus, 
-.form-group select:focus, 
+.form-group input:focus,
+.form-group select:focus,
 .form-group textarea:focus {
     border-color: var(--border-focus);
     box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
@@ -724,8 +749,13 @@ header {
 }
 
 @keyframes borderPulse {
-    0% { border-color: rgba(225, 29, 72, 0.2); }
-    100% { border-color: rgba(225, 29, 72, 0.5); }
+    0% {
+        border-color: rgba(225, 29, 72, 0.2);
+    }
+
+    100% {
+        border-color: rgba(225, 29, 72, 0.5);
+    }
 }
 
 .allergy-alert-banner svg {
@@ -937,11 +967,30 @@ header {
     font-weight: 600;
 }
 
-.flow-step.date { background-color: #eff6ff; color: #1e40af; }
-.flow-step.doc { background-color: #f8fafc; color: #475569; }
-.flow-step.sym { background-color: #fffbeb; color: #b45309; }
-.flow-step.diag { background-color: #fff1f2; color: #be123c; }
-.flow-step.treat { background-color: #f0fdf4; color: #166534; }
+.flow-step.date {
+    background-color: #eff6ff;
+    color: #1e40af;
+}
+
+.flow-step.doc {
+    background-color: #f8fafc;
+    color: #475569;
+}
+
+.flow-step.sym {
+    background-color: #fffbeb;
+    color: #b45309;
+}
+
+.flow-step.diag {
+    background-color: #fff1f2;
+    color: #be123c;
+}
+
+.flow-step.treat {
+    background-color: #f0fdf4;
+    color: #166534;
+}
 
 .flow-arrow {
     font-size: 0.75rem;
@@ -1031,8 +1080,13 @@ header {
 }
 
 @keyframes modalSlide {
-    from { transform: translateY(20px); }
-    to { transform: translateY(0); }
+    from {
+        transform: translateY(20px);
+    }
+
+    to {
+        transform: translateY(0);
+    }
 }
 
 .scanner-header {
@@ -1072,7 +1126,7 @@ header {
     align-items: center;
     justify-content: center;
     margin-bottom: 20px;
-    box-shadow: inset 0 0 40px rgba(0,0,0,0.8);
+    box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.8);
 }
 
 /* Corners for targeting */
@@ -1083,10 +1137,33 @@ header {
     border: 4px solid var(--accent-blue);
 }
 
-.corner-tl { top: 15px; left: 15px; border-right: none; border-bottom: none; }
-.corner-tr { top: 15px; right: 15px; border-left: none; border-bottom: none; }
-.corner-bl { bottom: 15px; left: 15px; border-right: none; border-top: none; }
-.corner-br { bottom: 15px; right: 15px; border-left: none; border-top: none; }
+.corner-tl {
+    top: 15px;
+    left: 15px;
+    border-right: none;
+    border-bottom: none;
+}
+
+.corner-tr {
+    top: 15px;
+    right: 15px;
+    border-left: none;
+    border-bottom: none;
+}
+
+.corner-bl {
+    bottom: 15px;
+    left: 15px;
+    border-right: none;
+    border-top: none;
+}
+
+.corner-br {
+    bottom: 15px;
+    right: 15px;
+    border-left: none;
+    border-top: none;
+}
 
 /* Dynamic Laser Line */
 .scanner-laser {
@@ -1101,21 +1178,34 @@ header {
 }
 
 @keyframes scan {
-    0% { top: 25px; }
-    50% { top: 250px; }
-    100% { top: 25px; }
+    0% {
+        top: 25px;
+    }
+
+    50% {
+        top: 250px;
+    }
+
+    100% {
+        top: 25px;
+    }
 }
 
 .scanner-camera-icon {
-    color: rgba(255,255,255,0.15);
+    color: rgba(255, 255, 255, 0.15);
     width: 80px;
     height: 80px;
     animation: cameraPulse 2s infinite alternate;
 }
 
 @keyframes cameraPulse {
-    from { opacity: 0.1; }
-    to { opacity: 0.3; }
+    from {
+        opacity: 0.1;
+    }
+
+    to {
+        opacity: 0.3;
+    }
 }
 
 .scanner-status {
@@ -1193,8 +1283,13 @@ header {
 
 /* Animations */
 @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
 }
 
 @keyframes slideUp {
@@ -1202,6 +1297,7 @@ header {
         opacity: 0;
         transform: translateY(15px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -1235,6 +1331,7 @@ header {
     .history-layout {
         grid-template-columns: 1fr;
     }
+
     .history-sidebar {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -1246,40 +1343,50 @@ header {
     body {
         flex-direction: column;
     }
+
     aside {
         width: 100%;
         height: auto;
         position: relative;
         padding: 20px;
     }
+
     .logo-container {
         margin-bottom: 20px;
     }
+
     .nav-list {
         flex-direction: row;
         flex-wrap: wrap;
         gap: 6px;
     }
+
     .nav-item button {
         padding: 10px 14px;
         font-size: 0.85rem;
     }
+
     main {
         margin-left: 0;
         padding: 20px;
     }
+
     .form-grid {
         grid-template-columns: 1fr;
     }
+
     .form-full {
         grid-column: span 1;
     }
+
     .history-sidebar {
         grid-template-columns: 1fr;
     }
+
     .quick-grid {
         grid-template-columns: 1fr;
     }
+
     .quick-critical-box {
         grid-column: span 1;
     }

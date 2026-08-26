@@ -302,6 +302,22 @@ async function handleRegistration(event) {
         return;
     }
 
+    if (!/^\d{10}$/.test(phone)) {
+
+        showToast(
+            "Phone number must be exactly 10 digits.",
+            "danger"
+        );
+
+        const phoneInput =
+            document.getElementById("reg-phone");
+        if (phoneInput) {
+            phoneInput.focus();
+        }
+
+        return;
+    }
+
     const patientData = {
         name,
         age,
@@ -2078,3 +2094,135 @@ function escapeHtml(value) {
 
     return div.innerHTML;
 }
+
+// ============================================================
+// PATIENT REGISTRATION PHONE INPUT RESTRICTIONS
+// ============================================================
+
+document.addEventListener("DOMContentLoaded", () => {
+    const regPhone = document.getElementById("reg-phone");
+    if (regPhone) {
+        regPhone.addEventListener("input", function () {
+            this.value = this.value.replace(/\D/g, "").slice(0, 10);
+        });
+
+        regPhone.addEventListener("keypress", function (e) {
+            if (e.key && !/[0-9]/.test(e.key)) {
+                e.preventDefault();
+            }
+        });
+
+        regPhone.addEventListener("paste", function (e) {
+            e.preventDefault();
+            const text = (e.clipboardData || window.clipboardData).getData("text");
+            const digits = text.replace(/\D/g, "").slice(0, 10);
+            this.value = digits;
+        });
+    }
+}); parseInt(
+    parts[1],
+    10
+) - 1;
+
+const day =
+    parseInt(
+        parts[2],
+        10
+    );
+
+const date =
+    new Date(
+        year,
+        month,
+        day
+    );
+
+return date.toLocaleDateString(
+    "en-US",
+    {
+        year: "numeric",
+        month: "short",
+        day: "numeric"
+    }
+);
+    }
+
+const date =
+    new Date(dateStr);
+
+return date.toLocaleDateString(
+    "en-US",
+    {
+        year: "numeric",
+        month: "short",
+        day: "numeric"
+    }
+);
+}
+
+function truncateText(
+    text,
+    maxChars
+) {
+
+    if (!text) return "";
+
+    if (
+        text.length <= maxChars
+    ) {
+        return text;
+    }
+
+    return (
+        text.substring(
+            0,
+            maxChars
+        ) + "..."
+    );
+}
+
+function escapeHtml(value) {
+
+    if (
+        value === null ||
+        value === undefined
+    ) {
+        return "";
+    }
+
+    const div =
+        document.createElement(
+            "div"
+        );
+
+    div.textContent =
+        String(value);
+
+    return div.innerHTML;
+}
+
+// ============================================================
+// PATIENT REGISTRATION PHONE INPUT RESTRICTIONS
+// ============================================================
+
+document.addEventListener("DOMContentLoaded", () => {
+    const regPhone = document.getElementById("reg-phone");
+    if (regPhone) {
+        regPhone.addEventListener("input", function () {
+            this.value = this.value.replace(/\D/g, "").slice(0, 10);
+        });
+
+        regPhone.addEventListener("keypress", function (e) {
+            if (e.key && !/[0-9]/.test(e.key)) {
+                e.preventDefault();
+            }
+        });
+
+        regPhone.addEventListener("paste", function (e) {
+            e.preventDefault();
+            const text = (e.clipboardData || window.clipboardData).getData("text");
+            const digits = text.replace(/\D/g, "").slice(0, 10);
+            this.value = digits;
+        });
+    }
+});
