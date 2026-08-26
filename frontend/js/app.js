@@ -342,15 +342,6 @@ async function handleRegistration(event) {
         return;
     }
 
-    const patientData = {
-        name,
-        age,
-        gender,
-        phone,
-        allergies,
-        conditions
-    };
-
     try {
 
         isRegistering = true;
@@ -368,17 +359,12 @@ async function handleRegistration(event) {
             response.patient;
 
         // ====================================================
-        // QR GENERATION
-        // QR encodes the full /report/ URL so scanning with
-        // any phone camera opens the patient's report page
-        // and triggers an automatic email to the patient.
+        // ONLY QR GENERATION IN THE APPLICATION
+        // QR CONTAINS ONLY PATIENT ID
         // ====================================================
 
-        const reportUrl =
-            `${window.location.origin}/report/${encodeURIComponent(registeredPatient.id)}`;
-
         const qrCodeUrl =
-            `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(reportUrl)}`;
+            `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(registeredPatient.id)}`;
 
         document.getElementById("success-patient-id").innerText =
             registeredPatient.id;

@@ -19,8 +19,18 @@ async def init_db():
     async with engine.begin() as conn:
         # Import models inside function to prevent circular import issues
         from app.database import models
-        from sqlalchemy import delete
+        from sqlalchemy import delete, text
         await conn.run_sync(Base.metadata.create_all)
+
+        # Ensure email column exists on patients table in SQLite
+        def migrate_schema(sync_conn):
+            result = sync_conn.execute(text("PRAGMA table_info(patients)"))
+            cols = [row[1] for row in result.fetchall()]
+            if cols and "email" not in cols:
+                sync_conn.execute(text("ALTER TABLE patients ADD COLUMN email VARCHAR DEFAULT NULL"))
+
+        await conn.run_sync(migrate_schema)
+
         # Ensure demo seed records are purged from database
         demo_ids = ['MK-2026-1001', 'MK-2026-1002', 'MK-2026-1003', 'MK-2026-1004']
         await conn.execute(

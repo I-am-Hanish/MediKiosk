@@ -37,8 +37,16 @@ async function apiRegisterPatient(patientData) {
 async function apiSearchPatient(patientId) {
     const response = await fetch(`/api/patient/search?id=${encodeURIComponent(patientId)}`);
     if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.detail || "Patient search failed.");
+        let errorMsg = "Patient search failed.";
+        try {
+            const err = await response.json();
+            if (err && err.detail) {
+                errorMsg = err.detail;
+            }
+        } catch (_) {
+            errorMsg = response.statusText || errorMsg;
+        }
+        throw new Error(errorMsg);
     }
     return await response.json();
 }
@@ -51,8 +59,16 @@ async function apiSearchPatient(patientId) {
 async function apiGetPatientHistory(patientId) {
     const response = await fetch(`/api/patient/${encodeURIComponent(patientId)}/history`);
     if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.detail || "Failed to load patient history.");
+        let errorMsg = "Failed to load patient history.";
+        try {
+            const err = await response.json();
+            if (err && err.detail) {
+                errorMsg = err.detail;
+            }
+        } catch (_) {
+            errorMsg = response.statusText || errorMsg;
+        }
+        throw new Error(errorMsg);
     }
     return await response.json();
 }
@@ -71,8 +87,16 @@ async function apiAddConsultation(consultationData) {
         body: JSON.stringify(consultationData)
     });
     if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.detail || "Failed to save consultation.");
+        let errorMsg = "Failed to save consultation.";
+        try {
+            const err = await response.json();
+            if (err && err.detail) {
+                errorMsg = err.detail;
+            }
+        } catch (_) {
+            errorMsg = response.statusText || errorMsg;
+        }
+        throw new Error(errorMsg);
     }
     return await response.json();
 }
@@ -92,8 +116,16 @@ async function apiUpdateConsultation(consultationId, consultationData) {
         body: JSON.stringify(consultationData)
     });
     if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.detail || "Failed to update consultation.");
+        let errorMsg = "Failed to update consultation.";
+        try {
+            const err = await response.json();
+            if (err && err.detail) {
+                errorMsg = err.detail;
+            }
+        } catch (_) {
+            errorMsg = response.statusText || errorMsg;
+        }
+        throw new Error(errorMsg);
     }
     return await response.json();
 }
