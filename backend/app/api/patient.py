@@ -15,7 +15,7 @@ class PatientCreate(BaseModel):
     name: str = Field(..., min_length=1)
     age: int = Field(..., ge=0, le=130)
     gender: str = Field(..., min_length=1)
-    phone: str = Field(..., min_length=1)
+    phone: str = Field(..., pattern=r"^\d{10}$")
     allergies: Optional[str] = "None"
     conditions: Optional[str] = "None"
 
