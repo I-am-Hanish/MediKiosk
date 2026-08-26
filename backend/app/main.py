@@ -54,4 +54,4 @@ frontend_dir = os.path.join(BASE_DIR, "frontend")
 if os.path.exists(frontend_dir):
     app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
 else:
-    print(f"Warning: Frontend directory not found at {frontend_dir}")
+    print(f"Warning: Frontend directory not found at {frontend_dir}")

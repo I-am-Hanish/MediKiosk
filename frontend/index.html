@@ -156,7 +156,7 @@
                 </h3>
 
 
-                <form id="patient-registration-form" onsubmit="handleRegistration(event)">
+                <form id="patient-registration-form" onsubmit="event.preventDefault(); handleRegistration(event); return false;">
 
                     <div class="form-grid">
 
