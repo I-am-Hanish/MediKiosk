@@ -8,6 +8,7 @@ from typing import List, Optional
 from app.database import get_db
 from app.database.models import Patient, Consultation
 from datetime import datetime
+from app.services.email_service import send_report_email
 
 router = APIRouter()
 
@@ -76,94 +77,233 @@ def generate_smart_summary(consultations: List[Consultation]) -> str:
 @router.get("/")
 async def patient_home():
     return {"message": "Patient API is working"}
-
 @router.post("/register")
-async def register_patient(patient_data: PatientCreate, db: AsyncSession = Depends(get_db)):
-    max_retries = 10
-    last_error = None
+async def register_patient(
+    patient_data: PatientCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        phone = patient_data.phone.strip()
+        email = (patient_data.email or "").strip() or None
 
-    for attempt in range(max_retries):
-        try:
-            # 1. Fetch all existing patient IDs from SQLite
-            result = await db.execute(select(Patient.id))
-            all_ids = result.scalars().all()
+        # ============================================================
+        # 1. CHECK IF PATIENT ALREADY EXISTS
+        #    Phone is the primary identifier.
+        #    Email is used as a secondary identifier.
+        # ============================================================
 
-            existing_ids_set = set()
-            max_suffix = 1000  # Default base so first patient is MK-2026-1001
+        result = await db.execute(
+            select(Patient).where(Patient.phone == phone)
+        )
+        existing_patient = result.scalars().first()
 
-            for pid in all_ids:
-                if not pid:
-                    continue
-                pid_clean = pid.strip().upper()
-                existing_ids_set.add(pid_clean)
-                try:
-                    parts = pid.strip().split("-")
-                    # Check for format MK-2026-XXXX
-                    if len(parts) >= 3 and parts[0].upper() == "MK" and parts[1] == "2026":
-                        suffix_val = int(parts[2])
-                        if suffix_val > max_suffix:
-                            max_suffix = suffix_val
-                except (ValueError, IndexError):
-                    continue
-
-            # 2. Determine next candidate ID
-            candidate_suffix = max(max_suffix, 1000) + 1 + attempt
-            candidate_id = f"MK-2026-{candidate_suffix}"
-
-            while candidate_id.upper() in existing_ids_set:
-                candidate_suffix += 1
-                candidate_id = f"MK-2026-{candidate_suffix}"
-
-            # 3. Check SQLite database to confirm candidate ID does not exist
-            existing = await db.get(Patient, candidate_id)
-            if existing:
-                continue
-
-            # 4. Insert new patient record
-            new_patient = Patient(
-                id=candidate_id,
-                name=patient_data.name.strip(),
-                age=patient_data.age,
-                gender=patient_data.gender.strip(),
-                phone=patient_data.phone.strip(),
-                email=(patient_data.email or "").strip() or None,
-                allergies=patient_data.allergies.strip() if patient_data.allergies else "None",
-                conditions=patient_data.conditions.strip() if patient_data.conditions else "None",
-                summary="No consultation history available yet."
+        if not existing_patient and email:
+            result = await db.execute(
+                select(Patient).where(Patient.email == email)
             )
-            db.add(new_patient)
-            await db.commit()
-            await db.refresh(new_patient)
+            existing_patient = result.scalars().first()
+
+        # ============================================================
+        # 2. EXISTING PATIENT
+        #    Keep the SAME patient ID and fetch ALL consultations.
+        # ============================================================
+
+        if existing_patient:
+            result = await db.execute(
+                select(Consultation)
+                .where(Consultation.patient_id == existing_patient.id)
+                .order_by(
+                    Consultation.date.desc(),
+                    Consultation.id.desc()
+                )
+            )
+            consultations = result.scalars().all()
+
+            # Use newly entered email if the patient didn't previously
+            # have one.
+            if email and not existing_patient.email:
+                existing_patient.email = email
+                await db.commit()
+                await db.refresh(existing_patient)
+
+            consultation_dicts = [
+                {
+                    "date": c.date,
+                    "doctor_name": c.doctor_name,
+                    "specialization": c.specialization,
+                    "hospital_name": c.hospital_name,
+                    "symptoms": c.symptoms,
+                    "diagnosis": c.diagnosis,
+                    "treatment": c.treatment,
+                    "notes": c.notes,
+                }
+                for c in consultations
+            ]
+
+            patient_dict = {
+                "id": existing_patient.id,
+                "name": existing_patient.name,
+                "age": existing_patient.age,
+                "gender": existing_patient.gender,
+                "phone": existing_patient.phone,
+                "email": existing_patient.email,
+                "allergies": existing_patient.allergies,
+                "conditions": existing_patient.conditions,
+                "summary": existing_patient.summary,
+            }
+
+            if existing_patient.email:
+                try:
+                    send_report_email(
+                        patient_dict,
+                        consultation_dicts
+                    )
+                    print(
+                        f"EMAIL: existing patient history sent to "
+                        f"{existing_patient.email}"
+                    )
+                except Exception as e:
+                    print(f"Email sending failed: {e}")
 
             return {
                 "status": "success",
-                "patient": {
-                    "id": new_patient.id,
-                    "name": new_patient.name,
-                    "age": new_patient.age,
-                    "gender": new_patient.gender,
-                    "phone": new_patient.phone,
-                    "email": new_patient.email,
-                    "allergies": new_patient.allergies,
-                    "conditions": new_patient.conditions,
-                    "summary": new_patient.summary
-                }
+                "existing_patient": True,
+                "message": "Existing patient found. Complete consultation history sent.",
+                "patient": patient_dict
             }
-        except IntegrityError as ie:
-            await db.rollback()
-            last_error = ie
-            continue
-        except HTTPException:
-            await db.rollback()
-            raise
-        except Exception as e:
-            await db.rollback()
-            raise HTTPException(status_code=500, detail=f"Database error during registration: {str(e)}")
 
-    raise HTTPException(
-        status_code=500,
-        detail=f"Unable to generate a unique Patient ID after multiple attempts ({str(last_error)})."
-    )
+        # ============================================================
+        # 3. NEW PATIENT
+        #    Generate a completely new MediKiosk ID.
+        # ============================================================
+
+        result = await db.execute(select(Patient.id))
+        all_ids = result.scalars().all()
+
+        existing_ids_set = set()
+        max_suffix = 1000
+
+        for pid in all_ids:
+            if not pid:
+                continue
+
+            pid_clean = pid.strip().upper()
+            existing_ids_set.add(pid_clean)
+
+            try:
+                parts = pid_clean.split("-")
+
+                if (
+                    len(parts) >= 3
+                    and parts[0] == "MK"
+                    and parts[1] == "2026"
+                ):
+                    suffix_val = int(parts[2])
+
+                    if suffix_val > max_suffix:
+                        max_suffix = suffix_val
+
+            except (ValueError, IndexError):
+                continue
+
+        candidate_suffix = max_suffix + 1
+        candidate_id = f"MK-2026-{candidate_suffix}"
+
+        while candidate_id.upper() in existing_ids_set:
+            candidate_suffix += 1
+            candidate_id = f"MK-2026-{candidate_suffix}"
+
+        # ============================================================
+        # 4. CREATE NEW PATIENT
+        # ============================================================
+
+        new_patient = Patient(
+            id=candidate_id,
+            name=patient_data.name.strip(),
+            age=patient_data.age,
+            gender=patient_data.gender.strip(),
+            phone=phone,
+            email=email,
+            allergies=(
+                patient_data.allergies.strip()
+                if patient_data.allergies
+                else "None"
+            ),
+            conditions=(
+                patient_data.conditions.strip()
+                if patient_data.conditions
+                else "None"
+            ),
+            summary="No consultation history available yet."
+        )
+
+        db.add(new_patient)
+        await db.commit()
+        await db.refresh(new_patient)
+
+        # ============================================================
+        # 5. SEND EMAIL FOR NEW PATIENT
+        # ============================================================
+
+        if new_patient.email:
+            try:
+                send_report_email(
+                    {
+                        "id": new_patient.id,
+                        "name": new_patient.name,
+                        "age": new_patient.age,
+                        "gender": new_patient.gender,
+                        "phone": new_patient.phone,
+                        "email": new_patient.email,
+                        "allergies": new_patient.allergies,
+                        "conditions": new_patient.conditions,
+                        "summary": new_patient.summary,
+                    },
+                    []
+                )
+
+                print(
+                    f"EMAIL: new patient report sent to "
+                    f"{new_patient.email}"
+                )
+
+            except Exception as e:
+                print(f"Email sending failed: {e}")
+
+        return {
+            "status": "success",
+            "existing_patient": False,
+            "message": "New patient registered successfully.",
+            "patient": {
+                "id": new_patient.id,
+                "name": new_patient.name,
+                "age": new_patient.age,
+                "gender": new_patient.gender,
+                "phone": new_patient.phone,
+                "email": new_patient.email,
+                "allergies": new_patient.allergies,
+                "conditions": new_patient.conditions,
+                "summary": new_patient.summary
+            }
+        }
+
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Patient registration conflict. Please try again."
+        )
+
+    except HTTPException:
+        await db.rollback()
+        raise
+
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database error during registration: {str(e)}"
+        )
 
 @router.get("/search")
 async def search_patient(id: str = Query(...), db: AsyncSession = Depends(get_db)):
@@ -321,4 +461,4 @@ async def update_consultation(consultation_id: int, data: ConsultationUpdate, db
         }
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=500, detail=f"Database error during consultation update: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Database error during consultation update: {str(e)}")
