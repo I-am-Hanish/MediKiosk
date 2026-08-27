@@ -1,19 +1,22 @@
 // MediKiosk API Client Module
 // Handlers for interacting with the live FastAPI backend database
 
+const API_BASE_URL = 'https://medikiosk-backend-gqfq.onrender.com';
+
 /**
  * Registers a new patient with details entered by the user.
  * @param {Object} patientData - { name, age, gender, phone, allergies, conditions }
  * @returns {Promise<Object>} The registered patient response
  */
 async function apiRegisterPatient(patientData) {
-    const response = await fetch('https://medikiosk-backend-gqfq.onrender.com/api/patient/register', {
+    const response = await fetch(`${API_BASE_URL}/api/patient/register`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
         },
         body: JSON.stringify(patientData)
     });
+
     if (!response.ok) {
         let errorMsg = "Registration failed. Please verify inputs.";
         try {
@@ -26,6 +29,7 @@ async function apiRegisterPatient(patientData) {
         }
         throw new Error(errorMsg);
     }
+
     return await response.json();
 }
 
@@ -35,7 +39,10 @@ async function apiRegisterPatient(patientData) {
  * @returns {Promise<Object>} The matching patient record
  */
 async function apiSearchPatient(patientId) {
-    const response = await fetch(`/api/patient/search?id=${encodeURIComponent(patientId)}`);
+    const response = await fetch(
+        `${API_BASE_URL}/api/patient/search?id=${encodeURIComponent(patientId)}`
+    );
+
     if (!response.ok) {
         let errorMsg = "Patient search failed.";
         try {
@@ -48,6 +55,7 @@ async function apiSearchPatient(patientId) {
         }
         throw new Error(errorMsg);
     }
+
     return await response.json();
 }
 
@@ -57,7 +65,10 @@ async function apiSearchPatient(patientId) {
  * @returns {Promise<Object>} { patient, consultations }
  */
 async function apiGetPatientHistory(patientId) {
-    const response = await fetch(`/api/patient/${encodeURIComponent(patientId)}/history`);
+    const response = await fetch(
+        `${API_BASE_URL}/api/patient/${encodeURIComponent(patientId)}/history`
+    );
+
     if (!response.ok) {
         let errorMsg = "Failed to load patient history.";
         try {
@@ -70,6 +81,7 @@ async function apiGetPatientHistory(patientId) {
         }
         throw new Error(errorMsg);
     }
+
     return await response.json();
 }
 
@@ -79,13 +91,17 @@ async function apiGetPatientHistory(patientId) {
  * @returns {Promise<Object>} The response containing the new smart summary
  */
 async function apiAddConsultation(consultationData) {
-    const response = await fetch('/api/patient/consultation', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(consultationData)
-    });
+    const response = await fetch(
+        `${API_BASE_URL}/api/patient/consultation`,
+        {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(consultationData)
+        }
+    );
+
     if (!response.ok) {
         let errorMsg = "Failed to save consultation.";
         try {
@@ -98,6 +114,7 @@ async function apiAddConsultation(consultationData) {
         }
         throw new Error(errorMsg);
     }
+
     return await response.json();
 }
 
@@ -108,13 +125,17 @@ async function apiAddConsultation(consultationData) {
  * @returns {Promise<Object>} The response containing the updated smart summary
  */
 async function apiUpdateConsultation(consultationId, consultationData) {
-    const response = await fetch(`/api/patient/consultation/${encodeURIComponent(consultationId)}`, {
-        method: 'PUT',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(consultationData)
-    });
+    const response = await fetch(
+        `${API_BASE_URL}/api/patient/consultation/${encodeURIComponent(consultationId)}`,
+        {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(consultationData)
+        }
+    );
+
     if (!response.ok) {
         let errorMsg = "Failed to update consultation.";
         try {
@@ -127,6 +148,6 @@ async function apiUpdateConsultation(consultationId, consultationData) {
         }
         throw new Error(errorMsg);
     }
+
     return await response.json();
 }
-
