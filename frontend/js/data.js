@@ -7,7 +7,7 @@
  * @returns {Promise<Object>} The registered patient response
  */
 async function apiRegisterPatient(patientData) {
-    const response = await fetch('/api/patient/register', {
+    const response = await fetch('https://medikiosk-backend-gqfq.onrender.com/api/patient/register', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
