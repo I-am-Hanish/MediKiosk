@@ -424,41 +424,10 @@ async def add_consultation(data: ConsultationCreate, db: AsyncSession = Depends(
         raise HTTPException(status_code=500, detail=f"Database error during consultation save: {str(e)}")
 
 @router.put("/consultation/{consultation_id}")
-async def update_consultation(consultation_id: int, data: ConsultationUpdate, db: AsyncSession = Depends(get_db)):
-    consultation = await db.get(Consultation, consultation_id)
-    if not consultation:
-        raise HTTPException(status_code=404, detail="Consultation not found.")
+@router.patch("/consultation/{consultation_id}")
+async def update_consultation(consultation_id: int):
+    raise HTTPException(
+        status_code=403,
+        detail="Prescription history is immutable. Previous prescriptions cannot be edited or overwritten. Please create a new prescription."
+    )
 
-    patient = await db.get(Patient, consultation.patient_id)
-    if not patient:
-        raise HTTPException(status_code=404, detail="Associated patient not found.")
-
-    # Update existing consultation fields in-place
-    consultation.date = data.date.strip()
-    consultation.doctor_name = data.doctor_name.strip()
-    consultation.specialization = data.specialization.strip()
-    consultation.hospital_name = data.hospital_name.strip()
-    consultation.symptoms = data.symptoms.strip()
-    consultation.diagnosis = data.diagnosis.strip()
-    consultation.treatment = data.treatment.strip()
-    consultation.notes = data.notes.strip() if data.notes else ""
-
-    try:
-        # Fetch all consultations to re-synthesize Smart Case Summary
-        result = await db.execute(
-            select(Consultation).where(Consultation.patient_id == patient.id)
-        )
-        all_consults = result.scalars().all()
-        summary_text = generate_smart_summary(all_consults)
-
-        patient.summary = summary_text
-        await db.commit()
-
-        return {
-            "status": "success",
-            "consultation_id": consultation.id,
-            "summary": summary_text
-        }
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=500, detail=f"Database error during consultation update: {str(e)}")

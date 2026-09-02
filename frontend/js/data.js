@@ -119,10 +119,10 @@ async function apiAddConsultation(consultationData) {
 }
 
 /**
- * Updates an existing clinical consultation record.
+ * Updates an existing clinical consultation record (Disabled: Prescriptions are immutable).
  * @param {number|string} consultationId - The consultation primary key ID
  * @param {Object} consultationData - { date, doctor_name, specialization, hospital_name, symptoms, diagnosis, treatment, notes }
- * @returns {Promise<Object>} The response containing the updated smart summary
+ * @returns {Promise<Object>} The response
  */
 async function apiUpdateConsultation(consultationId, consultationData) {
     const response = await fetch(
@@ -137,7 +137,7 @@ async function apiUpdateConsultation(consultationId, consultationData) {
     );
 
     if (!response.ok) {
-        let errorMsg = "Failed to update consultation.";
+        let errorMsg = "Prescription history is immutable. Existing records cannot be modified.";
         try {
             const err = await response.json();
             if (err && err.detail) {

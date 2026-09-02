@@ -1359,14 +1359,14 @@ async function renderCaseHistory() {
 
                             <button
                                 type="button"
-                                class="btn btn-secondary btn-sm"
-                                onclick="openEditConsultation(${Number(consult.id)})"
-                                title="Edit Consultation"
+                                class="btn btn-outline btn-sm"
+                                onclick="openViewConsultation(${Number(consult.id)})"
+                                title="View Prescription Details"
                             >
 
-                                <i data-lucide="edit-3"></i>
+                                <i data-lucide="eye"></i>
 
-                                Edit
+                                View
 
                             </button>
 
@@ -1499,13 +1499,13 @@ async function renderCaseHistory() {
                             <button
                                 type="button"
                                 class="btn btn-outline btn-sm"
-                                onclick="openEditConsultation(${Number(consult.id)})"
-                                title="Edit this consultation"
+                                onclick="openViewConsultation(${Number(consult.id)})"
+                                title="View Prescription Details"
                             >
 
-                                <i data-lucide="pencil"></i>
+                                <i data-lucide="eye"></i>
 
-                                Edit
+                                View Prescription
 
                             </button>
 
@@ -1652,130 +1652,58 @@ function prepareConsultationForm() {
 // EDIT CONSULTATION
 // ============================================================
 
-function openEditConsultation(
-    consultId
-) {
+// ============================================================
+// VIEW PRESCRIPTION (READ-ONLY MODAL)
+// ============================================================
 
+function openViewConsultation(consultId) {
     if (!activePatient) return;
 
-    const consult =
-        loadedConsultations.find(
-            c =>
-                Number(c.id) ===
-                Number(consultId)
-        );
+    const consult = loadedConsultations.find(
+        c => Number(c.id) === Number(consultId)
+    );
 
     if (!consult) {
-
-        showToast(
-            "Consultation not found.",
-            "danger"
-        );
-
+        showToast("Prescription record not found.", "danger");
         return;
     }
 
-    editingConsultationId =
-        consult.id;
+    setText("view-consult-id", consult.id);
+    setText("view-consult-patient", `${activePatient.name} (${activePatient.id})`);
+    setText("view-consult-date", formatDate(consult.date));
+    setText("view-consult-doctor", `${consult.doctor_name} (${consult.specialization || 'General'})`);
+    setText("view-consult-hospital", consult.hospital_name || 'MediKiosk Clinic');
+    setText("view-consult-symptoms", consult.symptoms || 'None reported');
+    setText("view-consult-diagnosis", consult.diagnosis || 'Pending');
+    setText("view-consult-treatment", consult.treatment || 'None');
 
-    switchScreen(
-        "screen-consultation"
-    );
-
-    const patientLabel =
-        document.getElementById(
-            "consultation-active-patient"
-        );
-
-    if (patientLabel) {
-
-        patientLabel.innerText =
-            `${activePatient.name} (${activePatient.id})`;
+    const notesWrapper = document.getElementById("view-consult-notes-wrapper");
+    if (consult.notes && consult.notes.trim()) {
+        setText("view-consult-notes", consult.notes);
+        if (notesWrapper) notesWrapper.style.display = "block";
+    } else {
+        if (notesWrapper) notesWrapper.style.display = "none";
     }
 
-    const editId =
-        document.getElementById(
-            "edit-consultation-id"
-        );
-
-    if (editId) {
-        editId.value =
-            consult.id;
+    const modal = document.getElementById("view-prescription-modal");
+    if (modal) {
+        modal.classList.add("modal-active");
     }
-
-    document.getElementById(
-        "consult-symptoms"
-    ).value =
-        consult.symptoms || "";
-
-    document.getElementById(
-        "consult-diagnosis"
-    ).value =
-        consult.diagnosis || "";
-
-    document.getElementById(
-        "consult-doctor"
-    ).value =
-        consult.doctor_name || "";
-
-    document.getElementById(
-        "consult-specialization"
-    ).value =
-        consult.specialization || "";
-
-    document.getElementById(
-        "consult-hospital"
-    ).value =
-        consult.hospital_name || "";
-
-    document.getElementById(
-        "consult-date"
-    ).value =
-        consult.date || "";
-
-    document.getElementById(
-        "consult-treatment"
-    ).value =
-        consult.treatment || "";
-
-    document.getElementById(
-        "consult-notes"
-    ).value =
-        consult.notes || "";
-
-    const titleText =
-        document.getElementById(
-            "consultation-title-text"
-        );
-
-    if (titleText) {
-        titleText.innerText =
-            "Edit Clinical Consultation";
-    }
-
-    const btnText =
-        document.getElementById(
-            "consultation-btn-text"
-        );
-
-    if (btnText) {
-        btnText.innerText =
-            "Update Consultation";
-    }
-
-    document.getElementById(
-        "page-title"
-    ).innerText =
-        "Edit Consultation";
-
-    document.getElementById(
-        "page-desc"
-    ).innerText =
-        "Update clinical diagnosis, prescribed treatment, and doctor details";
 
     if (typeof lucide !== "undefined") {
         lucide.createIcons();
     }
+}
+
+function closeViewPrescriptionModal() {
+    const modal = document.getElementById("view-prescription-modal");
+    if (modal) {
+        modal.classList.remove("modal-active");
+    }
+}
+
+function openEditConsultation(consultId) {
+    openViewConsultation(consultId);
 }
 
 // ============================================================
@@ -1887,37 +1815,16 @@ async function handleSaveConsultation(
 
     try {
 
-        if (
-            editingConsultationId ||
-            editId
-        ) {
+        payload.patient_id =
+            activePatient.id;
 
-            const consultationId =
-                editingConsultationId ||
-                editId;
+        await apiAddConsultation(
+            payload
+        );
 
-            await apiUpdateConsultation(
-                consultationId,
-                payload
-            );
-
-            showToast(
-                "Consultation updated successfully!"
-            );
-
-        } else {
-
-            payload.patient_id =
-                activePatient.id;
-
-            await apiAddConsultation(
-                payload
-            );
-
-            showToast(
-                "Consultation saved successfully!"
-            );
-        }
+        showToast(
+            "New prescription saved successfully!"
+        );
 
         editingConsultationId =
             null;
