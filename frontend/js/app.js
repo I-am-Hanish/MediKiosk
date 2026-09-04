@@ -5,11 +5,21 @@
 
 let activePatient = null;
 let currentScreen = "screen-registration";
-let editingConsultationId = null;
 let loadedConsultations = [];
 
 let html5QrCode = null;
 let isScanning = false;
+
+// ============================================================
+// GLOBAL HELPER — used by openViewConsultation and inline code
+// ============================================================
+
+function setText(id, value) {
+    const element = document.getElementById(id);
+    if (element) {
+        element.innerText = value ?? "";
+    }
+}
 
 // ============================================================
 // PAGE TITLES
@@ -1566,8 +1576,6 @@ function prepareConsultationForm() {
 
     if (!activePatient) return;
 
-    editingConsultationId = null;
-
     const form =
         document.getElementById(
             "consultation-form"
@@ -1575,15 +1583,6 @@ function prepareConsultationForm() {
 
     if (form) {
         form.reset();
-    }
-
-    const editId =
-        document.getElementById(
-            "edit-consultation-id"
-        );
-
-    if (editId) {
-        editId.value = "";
     }
 
     const patientLabel =
@@ -1702,12 +1701,8 @@ function closeViewPrescriptionModal() {
     }
 }
 
-function openEditConsultation(consultId) {
-    openViewConsultation(consultId);
-}
-
 // ============================================================
-// SAVE / UPDATE CONSULTATION
+// SAVE CONSULTATION
 // ============================================================
 
 async function handleSaveConsultation(
@@ -1725,14 +1720,6 @@ async function handleSaveConsultation(
 
         return;
     }
-
-    const editIdElement =
-        document.getElementById(
-            "edit-consultation-id"
-        );
-
-    const editId =
-        editIdElement?.value.trim() || "";
 
     const symptoms =
         document.getElementById(
@@ -1826,13 +1813,6 @@ async function handleSaveConsultation(
             "New prescription saved successfully!"
         );
 
-        editingConsultationId =
-            null;
-
-        if (editIdElement) {
-            editIdElement.value = "";
-        }
-
         switchScreen(
             "screen-history"
         );
@@ -1859,8 +1839,6 @@ async function handleSaveConsultation(
 // ============================================================
 
 function cancelAddConsultation() {
-
-    editingConsultationId = null;
 
     switchScreen(
         "screen-history"
