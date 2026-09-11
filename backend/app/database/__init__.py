@@ -31,15 +31,7 @@ async def init_db():
 
         await conn.run_sync(migrate_schema)
 
-        # Ensure demo seed records are purged from database
-        demo_ids = ['MK-2026-1001', 'MK-2026-1002', 'MK-2026-1003', 'MK-2026-1004']
-        await conn.execute(
-            delete(models.Consultation).where(models.Consultation.patient_id.in_(demo_ids))
-        )
-        await conn.execute(
-            delete(models.Patient).where(models.Patient.id.in_(demo_ids))
-        )
-    print("Database initialized & SQLite tables created.")
+    print("Database initialized & SQLite tables ready.")
 
 # Dependency to provide db sessions
 async def get_db():

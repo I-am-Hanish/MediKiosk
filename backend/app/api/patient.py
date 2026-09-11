@@ -1,14 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 from app.database import get_db
 from app.database.models import Patient, Consultation
 from datetime import datetime
-from app.services.email_service import send_report_email
+import re
+from app.services.email_service import send_report_email, generate_qr_bytes
 
 router = APIRouter()
 
@@ -21,6 +22,18 @@ class PatientCreate(BaseModel):
     email: Optional[str] = None          # Optional — used for QR report delivery
     allergies: Optional[str] = "None"
     conditions: Optional[str] = "None"
+
+    @field_validator("email")
+    @classmethod
+    def validate_email_format(cls, v):
+        if v is not None:
+            v = v.strip()
+            if not v:
+                return None
+            if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", v):
+                raise ValueError("Please provide a valid email address.")
+        return v
+
 
 class ConsultationCreate(BaseModel):
     patient_id: str = Field(..., min_length=1)
@@ -80,6 +93,7 @@ async def patient_home():
 @router.post("/register")
 async def register_patient(
     patient_data: PatientCreate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
     try:
@@ -88,10 +102,7 @@ async def register_patient(
 
         # ============================================================
         # 1. CHECK IF PATIENT ALREADY EXISTS
-        #    Phone is the primary identifier.
-        #    Email is used as a secondary identifier.
         # ============================================================
-
         result = await db.execute(
             select(Patient).where(Patient.phone == phone)
         )
@@ -105,9 +116,7 @@ async def register_patient(
 
         # ============================================================
         # 2. EXISTING PATIENT
-        #    Keep the SAME patient ID and fetch ALL consultations.
         # ============================================================
-
         if existing_patient:
             result = await db.execute(
                 select(Consultation)
@@ -119,8 +128,7 @@ async def register_patient(
             )
             consultations = result.scalars().all()
 
-            # Use newly entered email if the patient didn't previously
-            # have one.
+            # Update newly entered email if none on file
             if email and not existing_patient.email:
                 existing_patient.email = email
                 await db.commit()
@@ -152,18 +160,13 @@ async def register_patient(
                 "summary": existing_patient.summary,
             }
 
+            # Non-blocking email dispatch in background
             if existing_patient.email:
-                try:
-                    send_report_email(
-                        patient_dict,
-                        consultation_dicts
-                    )
-                    print(
-                        f"EMAIL: existing patient history sent to "
-                        f"{existing_patient.email}"
-                    )
-                except Exception as e:
-                    print(f"Email sending failed: {e}")
+                background_tasks.add_task(
+                    send_report_email,
+                    patient_dict,
+                    consultation_dicts
+                )
 
             return {
                 "status": "success",
@@ -173,50 +176,29 @@ async def register_patient(
             }
 
         # ============================================================
-        # 3. NEW PATIENT
-        #    Generate a completely new MediKiosk ID.
+        # 3. NEW PATIENT ID GENERATION (Fast & Unique)
         # ============================================================
-
-        result = await db.execute(select(Patient.id))
+        result = await db.execute(
+            select(Patient.id).where(Patient.id.like("MK-2026-%"))
+        )
         all_ids = result.scalars().all()
 
-        existing_ids_set = set()
         max_suffix = 1000
-
         for pid in all_ids:
             if not pid:
                 continue
-
-            pid_clean = pid.strip().upper()
-            existing_ids_set.add(pid_clean)
-
             try:
-                parts = pid_clean.split("-")
-
-                if (
-                    len(parts) >= 3
-                    and parts[0] == "MK"
-                    and parts[1] == "2026"
-                ):
-                    suffix_val = int(parts[2])
-
-                    if suffix_val > max_suffix:
-                        max_suffix = suffix_val
-
+                suffix_val = int(pid.strip().split("-")[-1])
+                if suffix_val > max_suffix:
+                    max_suffix = suffix_val
             except (ValueError, IndexError):
                 continue
 
-        candidate_suffix = max_suffix + 1
-        candidate_id = f"MK-2026-{candidate_suffix}"
-
-        while candidate_id.upper() in existing_ids_set:
-            candidate_suffix += 1
-            candidate_id = f"MK-2026-{candidate_suffix}"
+        candidate_id = f"MK-2026-{max_suffix + 1}"
 
         # ============================================================
         # 4. CREATE NEW PATIENT
         # ============================================================
-
         new_patient = Patient(
             id=candidate_id,
             name=patient_data.name.strip(),
@@ -241,50 +223,33 @@ async def register_patient(
         await db.commit()
         await db.refresh(new_patient)
 
-        # ============================================================
-        # 5. SEND EMAIL FOR NEW PATIENT
-        # ============================================================
+        new_patient_dict = {
+            "id": new_patient.id,
+            "name": new_patient.name,
+            "age": new_patient.age,
+            "gender": new_patient.gender,
+            "phone": new_patient.phone,
+            "email": new_patient.email,
+            "allergies": new_patient.allergies,
+            "conditions": new_patient.conditions,
+            "summary": new_patient.summary
+        }
 
+        # ============================================================
+        # 5. SEND EMAIL IN BACKGROUND (Non-blocking)
+        # ============================================================
         if new_patient.email:
-            try:
-                send_report_email(
-                    {
-                        "id": new_patient.id,
-                        "name": new_patient.name,
-                        "age": new_patient.age,
-                        "gender": new_patient.gender,
-                        "phone": new_patient.phone,
-                        "email": new_patient.email,
-                        "allergies": new_patient.allergies,
-                        "conditions": new_patient.conditions,
-                        "summary": new_patient.summary,
-                    },
-                    []
-                )
-
-                print(
-                    f"EMAIL: new patient report sent to "
-                    f"{new_patient.email}"
-                )
-
-            except Exception as e:
-                print(f"Email sending failed: {e}")
+            background_tasks.add_task(
+                send_report_email,
+                new_patient_dict,
+                []
+            )
 
         return {
             "status": "success",
             "existing_patient": False,
             "message": "New patient registered successfully.",
-            "patient": {
-                "id": new_patient.id,
-                "name": new_patient.name,
-                "age": new_patient.age,
-                "gender": new_patient.gender,
-                "phone": new_patient.phone,
-                "email": new_patient.email,
-                "allergies": new_patient.allergies,
-                "conditions": new_patient.conditions,
-                "summary": new_patient.summary
-            }
+            "patient": new_patient_dict
         }
 
     except IntegrityError:
@@ -304,6 +269,30 @@ async def register_patient(
             status_code=500,
             detail=f"Database error during registration: {str(e)}"
         )
+
+@router.get("/{patient_id}/qr")
+async def get_patient_qr(patient_id: str):
+    """
+    Generate and serve a PNG QR code containing ONLY the Patient ID.
+    Enables 100% offline QR generation for MediKiosk terminals.
+    """
+    clean_id = (patient_id or "").strip().upper()
+    if not clean_id:
+        raise HTTPException(status_code=400, detail="Invalid Patient ID.")
+
+    try:
+        png_bytes = generate_qr_bytes(clean_id)
+        return Response(
+            content=png_bytes,
+            media_type="image/png",
+            headers={
+                "Cache-Control": "public, max-age=86400",
+                "Content-Disposition": f'inline; filename="qr_{clean_id}.png"'
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate QR code: {str(e)}")
+
 
 @router.get("/search")
 async def search_patient(id: str = Query(...), db: AsyncSession = Depends(get_db)):

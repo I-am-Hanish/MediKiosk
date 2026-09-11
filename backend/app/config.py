@@ -1,18 +1,27 @@
 import os
+from pathlib import Path
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
+
+# Load .env from backend directory or project root
+backend_env = Path(__file__).resolve().parent.parent / ".env"
+root_env = Path(__file__).resolve().parent.parent.parent / ".env"
+
+if backend_env.exists():
+    load_dotenv(backend_env)
+elif root_env.exists():
+    load_dotenv(root_env)
+else:
+    load_dotenv()
 
 class Settings(BaseSettings):
     demo_mode: bool = os.getenv('DEMO_MODE', 'false').lower() == 'true'
     database_url: str = os.getenv('DATABASE_URL', 'sqlite+aiosqlite:///./medikiosk.db')
-
-    # Gmail SMTP settings for QR report email delivery
-    smtp_host: str = os.getenv('SMTP_HOST', 'smtp.gmail.com')
-    smtp_port: int = int(os.getenv('SMTP_PORT', '587'))
-    smtp_user: str = os.getenv('SMTP_USER', '')   # Your Gmail address
-    smtp_pass: str = os.getenv('SMTP_PASS', '')   # Gmail App Password (not your login password)
-    smtp_from: str = os.getenv('SMTP_FROM', '')   # Display sender address (can be same as smtp_user)
+    resend_api_key: str = os.getenv('RESEND_API_KEY', '')
 
     class Config:
         env_file = '.env'
+        extra = 'ignore'
 
 settings = Settings()
+

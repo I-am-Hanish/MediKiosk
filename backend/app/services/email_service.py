@@ -4,12 +4,32 @@ Sends patient case history reports via Resend Email API.
 """
 
 import os
+import io
 import logging
 from datetime import datetime
 
+import qrcode
 import resend
 
 logger = logging.getLogger(__name__)
+
+
+def generate_qr_bytes(patient_id: str) -> bytes:
+    """Generate PNG QR code bytes containing ONLY the Patient ID."""
+    clean_id = (patient_id or "").strip().upper()
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=8,
+        border=2,
+    )
+    qr.add_data(clean_id)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="#0f172a", back_color="#ffffff")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
 
 
 def _build_html_email(patient, consultations: list) -> str:
@@ -124,6 +144,8 @@ def _build_html_email(patient, consultations: list) -> str:
         """
 
     now = datetime.now().strftime("%d %b %Y, %I:%M %p")
+    patient_id = str(patient.get('id') or '').strip().upper()
+    qr_img_url = f"https://api.qrserver.com/v1/create-qr-code/?size=180x180&data={patient_id}"
 
     return f"""<!DOCTYPE html>
 <html>
@@ -148,7 +170,7 @@ def _build_html_email(patient, consultations: list) -> str:
       </div>
 
       <div style="color:#bae6fd;font-size:14px;margin-top:6px;">
-        Patient Case History Report
+        Digital Patient Case History & Health ID Card
       </div>
 
       <div style="color:#7dd3fc;font-size:12px;margin-top:4px;">
@@ -157,24 +179,36 @@ def _build_html_email(patient, consultations: list) -> str:
 
     </div>
 
-
-    <!-- Patient ID Banner -->
+    <!-- Digital Health Card with QR Code (contains ONLY Patient ID) -->
     <div style="background:#1e293b;border:2px solid #38bdf8;
-                border-radius:10px;padding:18px 24px;margin-bottom:20px;
+                border-radius:12px;padding:24px 20px;margin-bottom:20px;
                 text-align:center;">
 
       <div style="color:#94a3b8;font-size:12px;letter-spacing:2px;
                   text-transform:uppercase;margin-bottom:6px;">
-        MediKiosk Patient ID
+        Digital MediKiosk Health ID
       </div>
 
-      <div style="color:#38bdf8;font-size:26px;font-weight:800;
-                  letter-spacing:3px;">
-        {patient.get('id', '')}
+      <div style="color:#38bdf8;font-size:28px;font-weight:800;
+                  letter-spacing:3px;margin-bottom:14px;">
+        {patient_id}
+      </div>
+
+      <!-- QR Code containing ONLY Patient ID -->
+      <div style="display:inline-block;background:#ffffff;padding:12px;
+                  border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,0.25);
+                  margin-bottom:12px;">
+        <img src="{qr_img_url}"
+             width="180" height="180"
+             alt="MediKiosk QR - {patient_id}"
+             style="display:block;margin:0 auto;border:0;width:180px;height:180px;" />
+      </div>
+
+      <div style="color:#94a3b8;font-size:12px;line-height:1.5;max-width:440px;margin:0 auto;">
+        Scan this QR code at any MediKiosk terminal or present your ID for instant clinical history verification.
       </div>
 
     </div>
-
 
     <!-- Demographics -->
     <div style="background:#1e293b;border:1px solid #334155;
@@ -345,8 +379,30 @@ def send_report_email(patient: dict, consultations: list) -> bool:
             "html": html_body,
         }
 
-        # Send through Resend API
-        email = resend.Emails.send(params)
+        # Attach downloadable QR code image
+        try:
+            pid = patient.get("id", "MK")
+            qr_bytes = generate_qr_bytes(pid)
+            params["attachments"] = [
+                {
+                    "filename": f"MediKiosk_QR_{pid}.png",
+                    "content": list(qr_bytes),
+                }
+            ]
+        except Exception as qr_att_err:
+            logger.warning("Could not generate QR attachment: %s", qr_att_err)
+
+        # Send through Resend API (with fallback if attachments fail)
+        try:
+            email = resend.Emails.send(params)
+        except Exception as send_err:
+            if "attachments" in params:
+                logger.warning("Resend send failed with attachments, retrying without: %s", send_err)
+                params.pop("attachments", None)
+                email = resend.Emails.send(params)
+            else:
+                raise send_err
+
 
         logger.info(
             "Report email sent successfully to %s "
