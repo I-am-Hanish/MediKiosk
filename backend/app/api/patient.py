@@ -104,17 +104,16 @@ async def register_patient(
 
         # ============================================================
         # 1. CHECK IF PATIENT ALREADY EXISTS
+        # Phone number is the ONLY deduplication key.
+        # Email is a contact field only — the same email address may
+        # belong to multiple different patients (e.g. a shared family
+        # inbox). Matching on email would incorrectly merge separate
+        # people into one record.
         # ============================================================
         result = await db.execute(
             select(Patient).where(Patient.phone == phone)
         )
         existing_patient = result.scalars().first()
-
-        if not existing_patient and email:
-            result = await db.execute(
-                select(Patient).where(Patient.email == email)
-            )
-            existing_patient = result.scalars().first()
 
         # ============================================================
         # 2. EXISTING PATIENT
@@ -130,8 +129,10 @@ async def register_patient(
             )
             consultations = result.scalars().all()
 
-            # Update patient email if newly provided or updated
-            if email and existing_patient.email != email:
+            # Only fill in the email if the patient has none on file.
+            # Never overwrite an existing email — a returning patient
+            # may have re-registered with a different address by mistake.
+            if email and not existing_patient.email:
                 existing_patient.email = email
                 await db.commit()
                 await db.refresh(existing_patient)
@@ -236,7 +237,8 @@ async def register_patient(
             "email": new_patient.email,
             "allergies": new_patient.allergies,
             "conditions": new_patient.conditions,
-            "summary": new_patient.summary
+            "summary": new_patient.summary,
+            "created_at": new_patient.created_at.isoformat() if new_patient.created_at else None
         }
 
         # ============================================================
@@ -328,7 +330,8 @@ async def search_patient(id: str = Query(...), db: AsyncSession = Depends(get_db
         "email": patient.email,
         "allergies": patient.allergies,
         "conditions": patient.conditions,
-        "summary": patient.summary
+        "summary": patient.summary,
+        "created_at": patient.created_at.isoformat() if patient.created_at else None
     }
 
 @router.get("/{patient_id}/history")
@@ -373,7 +376,8 @@ async def get_patient_history(patient_id: str, db: AsyncSession = Depends(get_db
             "email": patient.email,
             "allergies": patient.allergies,
             "conditions": patient.conditions,
-            "summary": dynamic_summary
+            "summary": dynamic_summary,
+            "created_at": patient.created_at.isoformat() if patient.created_at else None
         },
         "consultations": history
     }
