@@ -1,11 +1,58 @@
 // MediKiosk API Client Module
 // Handlers for interacting with the live FastAPI backend database
 
-const API_BASE_URL = 'https://medikiosk-backend-gqfq.onrender.com';
+/**
+ * Automatically detects whether MediKiosk is running locally (FastAPI server / Live Server)
+ * or in production on Render / cloud, ensuring instantaneous local responses for demos.
+ */
+const API_BASE_URL = (function () {
+    if (typeof window !== "undefined" && window.location) {
+        const host = window.location.hostname;
+        // Local developer environment
+        if (host === 'localhost' || host === '127.0.0.1' || window.location.protocol === 'file:') {
+            if (window.location.port === '8000') {
+                return ''; // Relative path when served directly by FastAPI
+            }
+            return 'http://127.0.0.1:8000'; // Target local FastAPI backend
+        }
+        // Hosted on Render directly
+        if (host.endsWith('onrender.com')) {
+            return window.location.origin;
+        }
+    }
+    // Fallback for static hosting (e.g. GitHub Pages / Vercel)
+    return 'https://medikiosk-backend-gqfq.onrender.com';
+})();
+
+/**
+ * Extracts clean user-facing error message from FastAPI responses.
+ */
+function parseApiError(errData, statusText, fallback) {
+    if (errData) {
+        if (typeof errData.detail === 'string') {
+            return errData.detail;
+        }
+        if (Array.isArray(errData.detail)) {
+            return errData.detail.map(d => (d.msg || d.message || JSON.stringify(d))).join('; ');
+        }
+        if (errData.message) {
+            return errData.message;
+        }
+    }
+    return statusText || fallback;
+}
+
+/**
+ * Returns the URL for the local backend QR endpoint.
+ */
+function apiGetPatientQrUrl(patientId) {
+    const cleanId = encodeURIComponent(String(patientId || '').trim().toUpperCase());
+    return `${API_BASE_URL}/api/patient/${cleanId}/qr`;
+}
 
 /**
  * Registers a new patient with details entered by the user.
- * @param {Object} patientData - { name, age, gender, phone, allergies, conditions }
+ * @param {Object} patientData - { name, age, gender, phone, email, allergies, conditions }
  * @returns {Promise<Object>} The registered patient response
  */
 async function apiRegisterPatient(patientData) {
@@ -21,9 +68,7 @@ async function apiRegisterPatient(patientData) {
         let errorMsg = "Registration failed. Please verify inputs.";
         try {
             const err = await response.json();
-            if (err && err.detail) {
-                errorMsg = err.detail;
-            }
+            errorMsg = parseApiError(err, response.statusText, errorMsg);
         } catch (_) {
             errorMsg = response.statusText || errorMsg;
         }
@@ -47,9 +92,7 @@ async function apiSearchPatient(patientId) {
         let errorMsg = "Patient search failed.";
         try {
             const err = await response.json();
-            if (err && err.detail) {
-                errorMsg = err.detail;
-            }
+            errorMsg = parseApiError(err, response.statusText, errorMsg);
         } catch (_) {
             errorMsg = response.statusText || errorMsg;
         }
@@ -73,9 +116,7 @@ async function apiGetPatientHistory(patientId) {
         let errorMsg = "Failed to load patient history.";
         try {
             const err = await response.json();
-            if (err && err.detail) {
-                errorMsg = err.detail;
-            }
+            errorMsg = parseApiError(err, response.statusText, errorMsg);
         } catch (_) {
             errorMsg = response.statusText || errorMsg;
         }
@@ -106,9 +147,7 @@ async function apiAddConsultation(consultationData) {
         let errorMsg = "Failed to save consultation.";
         try {
             const err = await response.json();
-            if (err && err.detail) {
-                errorMsg = err.detail;
-            }
+            errorMsg = parseApiError(err, response.statusText, errorMsg);
         } catch (_) {
             errorMsg = response.statusText || errorMsg;
         }

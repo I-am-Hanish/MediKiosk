@@ -97,6 +97,8 @@
 
     </aside>
 
+    <!-- Mobile Navigation Backdrop Overlay -->
+    <div id="mobile-nav-overlay" class="mobile-nav-overlay" onclick="closeMobileNav()"></div>
 
     <!-- =========================================================
          MAIN CONTENT
@@ -108,15 +110,23 @@
 
         <header>
 
-            <div class="header-title">
+            <div style="display: flex; align-items: center; gap: 14px;">
 
-                <h1 id="page-title">
-                    Patient Registration
-                </h1>
+                <button type="button" class="mobile-menu-btn" onclick="toggleMobileNav()" aria-label="Open Navigation Menu">
+                    <i data-lucide="menu"></i>
+                </button>
 
-                <p id="page-desc">
-                    Register a new patient and generate their Kiosk ID card
-                </p>
+                <div class="header-title">
+
+                    <h1 id="page-title">
+                        Patient Registration
+                    </h1>
+
+                    <p id="page-desc">
+                        Register a new patient and generate their Kiosk ID card
+                    </p>
+
+                </div>
 
             </div>
 
@@ -133,6 +143,7 @@
             </div>
 
         </header>
+
 
 
         <!-- =====================================================
@@ -640,6 +651,29 @@
             </div>
 
 
+            <!-- =========================================================
+                 SCREEN 3 — COMPACT HORIZONTAL MEDICAL JOURNEY TIMELINE
+            ========================================================== -->
+            <div id="medical-journey-card" class="medical-journey-card" style="display: none;">
+                <div class="medical-journey-header">
+                    <div class="medical-journey-title-wrap">
+                        <span class="medical-journey-pulse-dot"></span>
+                        <h3 class="medical-journey-title" id="timeline-title-text">MEDICAL JOURNEY</h3>
+                        <span class="medical-journey-badge" id="timeline-milestone-count">0 Milestones</span>
+                    </div>
+                    <div class="medical-journey-hint">
+                        <i data-lucide="info"></i>
+                        <span id="timeline-hint-text">Click milestone for details</span>
+                    </div>
+                </div>
+                <div class="medical-journey-scroll-container" id="medical-journey-scroll-container">
+                    <div class="medical-journey-track" id="medical-journey-track">
+                        <!-- Dynamically populated timeline nodes -->
+                    </div>
+                </div>
+            </div>
+
+
             <!-- History Layout -->
 
             <div class="history-layout">
@@ -1073,6 +1107,45 @@
 
         </div>
 
+    </div>
+
+
+    <!-- =========================================================
+         MEDICAL JOURNEY EVENT DETAIL MODAL (READ-ONLY)
+    ========================================================== -->
+    <div id="medical-journey-modal" class="modal-overlay">
+        <div class="prescription-view-modal" style="max-width: 580px;">
+            <!-- Modal Header -->
+            <div class="scanner-header" style="margin-bottom: 14px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div id="journey-modal-badge-icon" class="journey-modal-icon-wrap">
+                        <i id="journey-modal-icon" data-lucide="activity"></i>
+                    </div>
+                    <div>
+                        <h3 id="journey-modal-type-title" style="margin: 0; font-size: 1.15rem; font-family: var(--font-header);">
+                            Milestone Details
+                        </h3>
+                        <div id="journey-modal-date" style="font-size: 0.8rem; color: var(--text-muted); font-weight: 500;"></div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" onclick="closeMedicalJourneyModal()">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+
+            <!-- Event Details Body -->
+            <div id="journey-modal-content" class="view-prescription-content" style="display: flex; flex-direction: column; gap: 12px; width: 100%;">
+                <!-- Dynamic Content injected via JS -->
+            </div>
+
+            <!-- Footer Buttons -->
+            <div style="margin-top: 20px; width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+                <div id="journey-modal-action-wrap"></div>
+                <button type="button" class="btn btn-secondary" onclick="closeMedicalJourneyModal()">
+                    Close
+                </button>
+            </div>
+        </div>
     </div>
 
 
