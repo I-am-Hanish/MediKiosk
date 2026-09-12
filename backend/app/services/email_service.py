@@ -1,21 +1,31 @@
 """
 MediKiosk Email Service
-Sends patient case history reports via Resend Email API.
+Sends Patient ID and QR code emails via Gmail SMTP.
 """
 
-import os
 import io
+import os
+import smtplib
 import logging
+import email.utils
 from datetime import datetime
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.image import MIMEImage
+from typing import Optional
 
 import qrcode
-import resend
+
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 
 def generate_qr_bytes(patient_id: str) -> bytes:
-    """Generate PNG QR code bytes containing ONLY the Patient ID."""
+    """
+    Generate PNG QR code bytes containing ONLY the Patient ID.
+    Enforces strict uppercase trimming and standalone ID encoding.
+    """
     clean_id = (patient_id or "").strip().upper()
     qr = qrcode.QRCode(
         version=1,
@@ -31,393 +41,276 @@ def generate_qr_bytes(patient_id: str) -> bytes:
     return buf.getvalue()
 
 
-
-def _build_html_email(patient, consultations: list) -> str:
-    """Build rich HTML email body for the patient's case history report."""
-
-    # ── Consultation rows ──────────────────────────────────────────────────
-    consultation_rows = ""
-
-    if consultations:
-        for idx, c in enumerate(consultations, 1):
-            notes_row = ""
-
-            if c.get("notes"):
-                notes_row = f"""
-                <tr>
-                  <td style="padding:6px 12px;color:#94a3b8;font-size:13px;width:140px;">
-                    Notes
-                  </td>
-                  <td style="padding:6px 12px;color:#e2e8f0;font-size:13px;">
-                    {c['notes']}
-                  </td>
-                </tr>
-                """
-
-            consultation_rows += f"""
-            <div style="background:#1e293b;border:1px solid #334155;border-radius:10px;
-                        margin-bottom:16px;overflow:hidden;">
-
-              <div style="background:#0f172a;padding:10px 16px;border-bottom:1px solid #334155;
-                          display:flex;justify-content:space-between;align-items:center;">
-
-                <span style="color:#38bdf8;font-weight:700;font-size:14px;">
-                  #{idx} &nbsp;·&nbsp; {c.get('date', '')}
-                </span>
-
-                <span style="color:#94a3b8;font-size:13px;">
-                  {c.get('doctor_name', '')}
-                  ({c.get('specialization', '')})
-                  &mdash;
-                  {c.get('hospital_name', '')}
-                </span>
-
-              </div>
-
-              <table style="width:100%;border-collapse:collapse;">
-
-                <tr>
-                  <td style="padding:6px 12px;color:#94a3b8;font-size:13px;width:140px;">
-                    Symptoms
-                  </td>
-                  <td style="padding:6px 12px;color:#e2e8f0;font-size:13px;">
-                    {c.get('symptoms', '')}
-                  </td>
-                </tr>
-
-                <tr style="background:#172033;">
-                  <td style="padding:6px 12px;color:#94a3b8;font-size:13px;">
-                    Diagnosis
-                  </td>
-                  <td style="padding:6px 12px;color:#f87171;font-size:13px;font-weight:600;">
-                    {c.get('diagnosis', '')}
-                  </td>
-                </tr>
-
-                <tr>
-                  <td style="padding:6px 12px;color:#94a3b8;font-size:13px;">
-                    Treatment
-                  </td>
-                  <td style="padding:6px 12px;color:#34d399;font-size:13px;font-weight:500;">
-                    {c.get('treatment', '')}
-                  </td>
-                </tr>
-
-                {notes_row}
-
-              </table>
-            </div>
-            """
-
-    else:
-        consultation_rows = """
-        <p style="color:#64748b;font-style:italic;text-align:center;padding:20px 0;">
-          No consultation records on file yet.
-        </p>
-        """
-
-    # ── Allergies banner ───────────────────────────────────────────────────
-    allergy_val = str(patient.get("allergies", "") or "").strip()
-    has_allergies = allergy_val and allergy_val.lower() != "none"
-
-    allergy_banner = ""
-
-    if has_allergies:
-        allergy_banner = f"""
-        <div style="background:#450a0a;border:1px solid #dc2626;border-radius:8px;
-                    padding:12px 16px;margin-bottom:20px;display:flex;
-                    align-items:center;gap:12px;">
-
-          <span style="font-size:20px;">⚠️</span>
-
-          <div>
-            <div style="color:#fca5a5;font-weight:700;font-size:13px;margin-bottom:3px;">
-              ALLERGY ALERT
-            </div>
-
-            <div style="color:#fecaca;font-size:13px;">
-              {allergy_val}
-            </div>
-          </div>
-
-        </div>
-        """
-
+def _build_patient_id_email(patient_id: str, qr_cid: str = "patient_qr") -> str:
+    """
+    Build HTML email body containing ONLY the Patient ID and QR code.
+    Designed with modern dark-slate aesthetic matching MediKiosk.
+    Uses inline Content-ID (CID) for instant display in all email clients without external image requests.
+    """
     now = datetime.now().strftime("%d %b %Y, %I:%M %p")
-    patient_id = str(patient.get('id') or '').strip().upper()
-    qr_img_url = f"https://api.qrserver.com/v1/create-qr-code/?size=180x180&data={patient_id}"
+    clean_id = (patient_id or "").strip().upper()
 
     return f"""<!DOCTYPE html>
-<html>
-
+<html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MediKiosk Patient ID & QR Code</title>
 </head>
-
-<body style="margin:0;padding:0;background:#0f172a;
-             font-family:'Segoe UI',Arial,sans-serif;">
-
-  <div style="max-width:640px;margin:0 auto;padding:24px 16px;">
+<body style="margin:0;padding:0;background:#0b1329;font-family:'Segoe UI',Roboto,-apple-system,BlinkMacSystemFont,Arial,sans-serif;color:#e2e8f0;">
+  <div style="max-width:540px;margin:24px auto;padding:16px;">
 
     <!-- Header -->
-    <div style="background:linear-gradient(135deg,#1e40af,#0891b2);
-                border-radius:12px;padding:28px 32px;margin-bottom:20px;
-                text-align:center;">
-
-      <div style="font-size:28px;font-weight:800;color:#ffffff;
-                  letter-spacing:-0.5px;">
+    <div style="background:linear-gradient(135deg,#1e3a8a 0%,#0284c7 100%);border-radius:14px 14px 0 0;padding:28px 24px;text-align:center;">
+      <div style="font-size:28px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">
         🏥 MediKiosk
       </div>
-
-      <div style="color:#bae6fd;font-size:14px;margin-top:6px;">
-        Digital Patient Case History & Health ID Card
+      <div style="color:#bae6fd;font-size:14px;margin-top:6px;font-weight:500;">
+        Digital Patient Health ID Card
       </div>
-
-      <div style="color:#7dd3fc;font-size:12px;margin-top:4px;">
-        Generated: {now}
+      <div style="color:#7dd3fc;font-size:11px;margin-top:4px;opacity:0.85;">
+        Issued: {now}
       </div>
-
     </div>
 
-    <!-- Digital Health Card with QR Code (contains ONLY Patient ID) -->
-    <div style="background:#1e293b;border:2px solid #38bdf8;
-                border-radius:12px;padding:24px 20px;margin-bottom:20px;
-                text-align:center;">
+    <!-- Health ID & QR Card (Contains ONLY Patient ID & QR Code) -->
+    <div style="background:#1e293b;border-left:1px solid #334155;border-right:1px solid #334155;border-bottom:1px solid #334155;border-radius:0 0 14px 14px;padding:32px 24px;text-align:center;">
 
-      <div style="color:#94a3b8;font-size:12px;letter-spacing:2px;
-                  text-transform:uppercase;margin-bottom:6px;">
-        Digital MediKiosk Health ID
+      <div style="color:#94a3b8;font-size:11px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;margin-bottom:8px;">
+        PATIENT ID
       </div>
 
-      <div style="color:#38bdf8;font-size:28px;font-weight:800;
-                  letter-spacing:3px;margin-bottom:14px;">
-        {patient_id}
+      <div style="color:#38bdf8;font-size:32px;font-weight:800;letter-spacing:3px;margin-bottom:20px;font-family:Consolas,monaco,monospace;">
+        {clean_id}
       </div>
 
-      <!-- QR Code containing ONLY Patient ID -->
-      <div style="display:inline-block;background:#ffffff;padding:12px;
-                  border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,0.25);
-                  margin-bottom:12px;">
-        <img src="{qr_img_url}"
+      <!-- QR Code containing ONLY the Patient ID (CID inline image) -->
+      <div style="display:inline-block;background:#ffffff;padding:14px;border-radius:12px;box-shadow:0 10px 25px rgba(0,0,0,0.3);margin-bottom:20px;">
+        <img src="cid:{qr_cid}"
              width="180" height="180"
-             alt="MediKiosk QR - {patient_id}"
+             alt="MediKiosk QR - {clean_id}"
              style="display:block;margin:0 auto;border:0;width:180px;height:180px;" />
       </div>
 
-      <div style="color:#94a3b8;font-size:12px;line-height:1.5;max-width:440px;margin:0 auto;">
-        Scan this QR code at any MediKiosk terminal or present your ID for instant clinical history verification.
+      <div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:14px 18px;max-width:400px;margin:0 auto 16px;">
+        <div style="color:#cbd5e1;font-size:13px;line-height:1.6;">
+          Scan this QR code at any MediKiosk terminal or present your Patient ID (<strong>{clean_id}</strong>) for instant clinical verification and check-in.
+        </div>
+      </div>
+
+      <div style="color:#64748b;font-size:11px;line-height:1.5;">
+        Your digital QR code is also attached to this email as a PNG file for offline access.
       </div>
 
     </div>
-
-    <!-- Demographics -->
-    <div style="background:#1e293b;border:1px solid #334155;
-                border-radius:10px;padding:20px 24px;margin-bottom:20px;">
-
-      <div style="color:#38bdf8;font-weight:700;font-size:14px;
-                  text-transform:uppercase;letter-spacing:1px;
-                  margin-bottom:14px;">
-        👤 Patient Demographics
-      </div>
-
-      <table style="width:100%;border-collapse:collapse;">
-
-        <tr>
-          <td style="padding:6px 0;color:#94a3b8;font-size:13px;width:130px;">
-            Full Name
-          </td>
-
-          <td style="padding:6px 0;color:#e2e8f0;font-size:13px;font-weight:600;">
-            {patient.get('name', '')}
-          </td>
-        </tr>
-
-
-        <tr>
-          <td style="padding:6px 0;color:#94a3b8;font-size:13px;">
-            Age / Gender
-          </td>
-
-          <td style="padding:6px 0;color:#e2e8f0;font-size:13px;">
-            {patient.get('age', '')} yrs
-            &nbsp;|&nbsp;
-            {patient.get('gender', '')}
-          </td>
-        </tr>
-
-
-        <tr>
-          <td style="padding:6px 0;color:#94a3b8;font-size:13px;">
-            Phone
-          </td>
-
-          <td style="padding:6px 0;color:#e2e8f0;font-size:13px;">
-            {patient.get('phone', '')}
-          </td>
-        </tr>
-
-
-        <tr>
-          <td style="padding:6px 0;color:#94a3b8;font-size:13px;">
-            Conditions
-          </td>
-
-          <td style="padding:6px 0;color:#e2e8f0;font-size:13px;">
-            {patient.get('conditions', 'None')}
-          </td>
-        </tr>
-
-      </table>
-
-    </div>
-
-
-    {allergy_banner}
-
-
-    <!-- Smart Summary -->
-    <div style="background:#1e293b;border:1px solid #334155;
-                border-radius:10px;padding:20px 24px;margin-bottom:20px;">
-
-      <div style="color:#a78bfa;font-weight:700;font-size:14px;
-                  text-transform:uppercase;letter-spacing:1px;
-                  margin-bottom:10px;">
-        🧠 Smart Case Summary
-      </div>
-
-      <p style="color:#cbd5e1;font-size:13px;line-height:1.6;margin:0;">
-        {patient.get('summary', 'No consultation history available yet.')}
-      </p>
-
-    </div>
-
-
-    <!-- Consultation Timeline -->
-    <div style="background:#1e293b;border:1px solid #334155;
-                border-radius:10px;padding:20px 24px;margin-bottom:20px;">
-
-      <div style="color:#34d399;font-weight:700;font-size:14px;
-                  text-transform:uppercase;letter-spacing:1px;
-                  margin-bottom:16px;">
-
-        📋 Consultation History
-        ({len(consultations)} record{'s' if len(consultations) != 1 else ''})
-
-      </div>
-
-      {consultation_rows}
-
-    </div>
-
 
     <!-- Footer -->
-    <div style="text-align:center;padding:16px 0;color:#475569;font-size:12px;">
-
-      This report was automatically generated by MediKiosk.<br>
-
-      Please keep this confidential.
-      Do not share with unauthorized persons.
-
+    <div style="text-align:center;padding:20px 0;color:#475569;font-size:12px;">
+      This email was automatically generated by MediKiosk.<br>
+      Please keep your Patient ID confidential.
     </div>
 
   </div>
-
 </body>
-
 </html>
 """
 
 
-def send_report_email(patient: dict, consultations: list) -> bool:
-    """
-    Send a full HTML case history report using the Resend Email API.
+def mask_email(email_str: Optional[str]) -> str:
+    """Mask email address for privacy in logs (e.g. p***t@gmail.com)."""
+    if not email_str:
+        return "<none>"
+    s = str(email_str).strip()
+    if "@" not in s:
+        return "<invalid email>"
+    user, domain = s.split("@", 1)
+    if len(user) <= 2:
+        masked_user = user[0] + "*"
+    else:
+        masked_user = user[0] + "*" * (len(user) - 2) + user[-1]
+    return f"{masked_user}@{domain}"
 
-    Returns True on success, False if skipped or failed.
-    """
 
-    # Get patient's email
+def send_patient_id_email(patient: dict) -> bool:
+    """
+    Send an email containing ONLY the Patient ID and QR code using Gmail SMTP.
+
+    Features:
+    - Gmail SMTP (smtp.gmail.com:587 STARTTLS)
+    - Reads credentials securely from backend environment (SMTP_USERNAME, SMTP_PASSWORD)
+    - Never exposes passwords in code or logs
+    - Safe diagnostics outputting only True/False for credential detection
+    - QR code encodes strictly the Patient ID
+    - Embedded as inline MIME image + attached as PNG
+    - Registration succeeds even if email fails (non-blocking, returns True/False)
+    """
+    clean_id = (patient.get("id") or "").strip().upper()
     to_email = (patient.get("email") or "").strip()
 
-    if not to_email:
-        logger.info(
-            "Email skipped — patient %s has no email on file.",
-            patient.get("id")
-        )
-        return False
-
-    # Get Resend API key from environment
-    api_key = os.getenv("RESEND_API_KEY")
-
-    if not api_key:
-        logger.warning(
-            "Email skipped — RESEND_API_KEY is not configured."
-        )
-        return False
-
-    # Email subject
-    subject = (
-        f"MediKiosk — Case History Report for "
-        f"{patient.get('name', 'Patient')} "
-        f"({patient.get('id', '')})"
-    )
+    # Read SMTP configuration from settings or environment
+    smtp_server = (
+        getattr(settings, "smtp_server", None)
+        or os.getenv("SMTP_SERVER")
+        or os.getenv("SMTP_HOST")
+        or "smtp.gmail.com"
+    ).strip()
 
     try:
-        # Configure Resend
-        resend.api_key = api_key
+        smtp_port = int(getattr(settings, "smtp_port", None) or os.getenv("SMTP_PORT") or 587)
+    except (ValueError, TypeError):
+        smtp_port = 587
 
-        # Build the existing MediKiosk HTML report
-        html_body = _build_html_email(
-            patient,
-            consultations
+    smtp_username = (
+        getattr(settings, "smtp_username", None)
+        or os.getenv("SMTP_USERNAME")
+        or ""
+    ).strip()
+
+    raw_password = (
+        getattr(settings, "smtp_password", None)
+        or os.getenv("SMTP_PASSWORD")
+        or ""
+    ).strip()
+
+    # Google App Passwords are 16 letters, formatted with or without spaces
+    clean_password = (
+        raw_password.replace(" ", "")
+        if (len(raw_password.replace(" ", "")) == 16 and " " in raw_password)
+        else raw_password
+    )
+
+    smtp_from_email = (
+        getattr(settings, "smtp_from_email", None)
+        or os.getenv("SMTP_FROM_EMAIL")
+        or ""
+    ).strip()
+
+    smtp_username_detected = bool(smtp_username)
+    smtp_password_detected = bool(raw_password)
+
+    print(f"\n=======================================================", flush=True)
+    print(f"[EMAIL FUNCTION CALLED]", flush=True)
+    print(f"   Patient ID:             {clean_id}", flush=True)
+    print(f"   Recipient Email:        {mask_email(to_email)}", flush=True)
+    print(f"   SMTP_USERNAME detected: {smtp_username_detected}", flush=True)
+    print(f"   SMTP_PASSWORD detected: {smtp_password_detected}", flush=True)
+
+    if not to_email:
+        print(f"[EMAIL SKIPPED] Recipient email is empty or not provided on registration.", flush=True)
+        print(f"=======================================================\n", flush=True)
+        logger.info("Email skipped — patient %s has no email on file.", clean_id)
+        return False
+
+    if not smtp_username_detected or not smtp_password_detected:
+        print(f"[EMAIL FAILED] SMTP credentials missing in backend environment!", flush=True)
+        print(f"   SMTP_USERNAME detected: {smtp_username_detected}", flush=True)
+        print(f"   SMTP_PASSWORD detected: {smtp_password_detected}", flush=True)
+        print(f"   Please check backend/.env file.", flush=True)
+        print(f"=======================================================\n", flush=True)
+        logger.warning(
+            "Email skipped for patient %s — SMTP_USERNAME or SMTP_PASSWORD is not configured.",
+            clean_id
         )
+        return False
 
-        # Prepare email
-        params = {
-            "from": "MediKiosk <onboarding@resend.dev>",
-            "to": [to_email],
-            "subject": subject,
-            "html": html_body,
-        }
+    from_header = smtp_from_email if smtp_from_email else f"MediKiosk <{smtp_username}>"
+    subject = f"MediKiosk — Your Patient ID & QR Code ({clean_id})"
 
-        # Attach downloadable QR code image
-        try:
-            pid = patient.get("id", "MK")
-            qr_bytes = generate_qr_bytes(pid)
-            params["attachments"] = [
-                {
-                    "filename": f"MediKiosk_QR_{pid}.png",
-                    "content": list(qr_bytes),
-                }
-            ]
-        except Exception as qr_att_err:
-            logger.warning("Could not generate QR attachment: %s", qr_att_err)
+    try:
+        # Generate QR code bytes (strictly Patient ID)
+        qr_bytes = generate_qr_bytes(clean_id)
 
-        # Send through Resend API (with fallback if attachments fail)
-        try:
-            email = resend.Emails.send(params)
-        except Exception as send_err:
-            if "attachments" in params:
-                logger.warning("Resend send failed with attachments, retrying without: %s", send_err)
-                params.pop("attachments", None)
-                email = resend.Emails.send(params)
-            else:
-                raise send_err
+        # Create root MIME container with 'related' for inline CID images
+        msg_root = MIMEMultipart("related")
+        msg_root["Subject"] = subject
+        msg_root["From"] = from_header
+        msg_root["To"] = to_email
+        msg_root["Date"] = email.utils.formatdate(localtime=True)
 
+        # Alternative container for plain text and HTML
+        msg_alt = MIMEMultipart("alternative")
+        msg_root.attach(msg_alt)
 
+        # Plain text fallback (Contains ONLY Patient ID and scan instruction)
+        plain_text = (
+            f"MediKiosk — Digital Patient Health ID Card\n\n"
+            f"PATIENT ID: {clean_id}\n\n"
+            f"Please present your Patient ID ({clean_id}) or scan the attached QR code at any MediKiosk terminal.\n"
+        )
+        msg_alt.attach(MIMEText(plain_text, "plain", "utf-8"))
+
+        # HTML body (Contains ONLY Patient ID and QR code)
+        qr_cid = "patient_qr_code"
+        html_body = _build_patient_id_email(clean_id, qr_cid=qr_cid)
+        msg_alt.attach(MIMEText(html_body, "html", "utf-8"))
+
+        # Attach inline QR code image (referenced by cid:patient_qr_code)
+        img_inline = MIMEImage(qr_bytes, _subtype="png")
+        img_inline.add_header("Content-ID", f"<{qr_cid}>")
+        img_inline.add_header("Content-Disposition", "inline", filename=f"MediKiosk_QR_{clean_id}.png")
+        msg_root.attach(img_inline)
+
+        # Attach downloadable PNG attachment
+        img_attach = MIMEImage(qr_bytes, _subtype="png")
+        img_attach.add_header("Content-Disposition", "attachment", filename=f"MediKiosk_QR_{clean_id}.png")
+        msg_root.attach(img_attach)
+
+        # Connect to Gmail SMTP server using STARTTLS
+        print(f"[SMTP connection started] Connecting to {smtp_server}:{smtp_port} with STARTTLS...", flush=True)
+        with smtplib.SMTP(smtp_server, smtp_port, timeout=25) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            print(f"[SMTP Authenticating] Logging in...", flush=True)
+            try:
+                server.login(smtp_username, clean_password)
+            except smtplib.SMTPAuthenticationError:
+                if clean_password != raw_password:
+                    server.login(smtp_username, raw_password)
+                else:
+                    raise
+            print(f"[SMTP Sending] Transmitting message to recipient...", flush=True)
+            server.send_message(msg_root)
+
+        print(f"[SUCCESS] Email sent successfully to {mask_email(to_email)} for Patient ID: {clean_id} via {smtp_server}", flush=True)
+        print(f"=======================================================\n", flush=True)
         logger.info(
-            "Report email sent successfully to %s "
-            "for patient %s. Resend response: %s",
-            to_email,
-            patient.get("id"),
-            email
+            "Patient ID & QR email successfully sent via Gmail SMTP to %s for patient %s",
+            mask_email(to_email),
+            clean_id
         )
-
         return True
 
-    except Exception as exc:
+    except smtplib.SMTPAuthenticationError as auth_err:
+        print(f"[ERROR] Gmail SMTP authentication failed for recipient {mask_email(to_email)}: {auth_err}", flush=True)
+        print(f"   GMAIL SETUP NOTE: You MUST use a 16-character Google App Password in SMTP_PASSWORD (not your personal password).", flush=True)
+        print(f"   Generate one at: https://myaccount.google.com/apppasswords", flush=True)
+        print(f"=======================================================\n", flush=True)
         logger.error(
-            "Failed to send report email through Resend: %s",
-            exc
+            "Gmail SMTP authentication failed when sending to %s for patient %s: %s",
+            mask_email(to_email),
+            clean_id,
+            str(auth_err)
         )
-
         return False
+
+    except Exception as exc:
+        print(f"[ERROR] Failed to send Patient ID email to {mask_email(to_email)}. Exact error: {type(exc).__name__}: {str(exc)}", flush=True)
+        print(f"=======================================================\n", flush=True)
+        logger.error(
+            "Failed to send Patient ID email via SMTP to %s for patient %s: %s",
+            mask_email(to_email),
+            clean_id,
+            str(exc)
+        )
+        return False
+
+
+def send_report_email(patient: dict, consultations: Optional[list] = None) -> bool:
+    """
+    Maintains compatibility with existing patient and report triggers while strictly
+    fulfilling the requirement that emails contain ONLY the Patient ID and QR code.
+    """
+    return send_patient_id_email(patient)
+
+

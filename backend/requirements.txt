@@ -5,6 +5,6 @@ aiosqlite
 pydantic
 pydantic-settings
 python-dotenv
-resend
 qrcode
-pillow
+pillow
+

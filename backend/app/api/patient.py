@@ -9,9 +9,11 @@ from app.database import get_db
 from app.database.models import Patient, Consultation
 from datetime import datetime
 import re
-from app.services.email_service import send_report_email, generate_qr_bytes
+from app.services.email_service import send_patient_id_email, send_report_email, generate_qr_bytes, mask_email
 
 router = APIRouter()
+
+
 
 # Pydantic Schemas
 class PatientCreate(BaseModel):
@@ -128,8 +130,8 @@ async def register_patient(
             )
             consultations = result.scalars().all()
 
-            # Update newly entered email if none on file
-            if email and not existing_patient.email:
+            # Update patient email if newly provided or updated
+            if email and existing_patient.email != email:
                 existing_patient.email = email
                 await db.commit()
                 await db.refresh(existing_patient)
@@ -160,18 +162,20 @@ async def register_patient(
                 "summary": existing_patient.summary,
             }
 
-            # Non-blocking email dispatch in background
+            # Non-blocking email dispatch in background (Patient ID & QR only)
             if existing_patient.email:
+                print(f"[PATIENT API] Enqueuing email task for existing patient {existing_patient.id} to recipient: {mask_email(existing_patient.email)}", flush=True)
                 background_tasks.add_task(
-                    send_report_email,
-                    patient_dict,
-                    consultation_dicts
+                    send_patient_id_email,
+                    patient_dict
                 )
+            else:
+                print(f"[PATIENT API] Existing patient {existing_patient.id} has NO email address on file. Skipping email dispatch.", flush=True)
 
             return {
                 "status": "success",
                 "existing_patient": True,
-                "message": "Existing patient found. Complete consultation history sent.",
+                "message": "Existing patient found. Digital Health ID & QR sent to email.",
                 "patient": patient_dict
             }
 
@@ -239,16 +243,18 @@ async def register_patient(
         # 5. SEND EMAIL IN BACKGROUND (Non-blocking)
         # ============================================================
         if new_patient.email:
+            print(f"[PATIENT API] Enqueuing email task for new patient {new_patient.id} to recipient: {mask_email(new_patient.email)}", flush=True)
             background_tasks.add_task(
-                send_report_email,
-                new_patient_dict,
-                []
+                send_patient_id_email,
+                new_patient_dict
             )
+        else:
+            print(f"[PATIENT API] New patient {new_patient.id} registered without email. Skipping email dispatch.", flush=True)
 
         return {
             "status": "success",
             "existing_patient": False,
-            "message": "New patient registered successfully.",
+            "message": "New patient registered successfully. Digital Health ID & QR sent to email.",
             "patient": new_patient_dict
         }
 

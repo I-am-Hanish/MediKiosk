@@ -1,7 +1,14 @@
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import patient, interview, doctor, report
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
 
 app = FastAPI(title="MediKiosk Backend", version="0.1.0")
 
@@ -42,11 +49,24 @@ app.include_router(
 )
 
 
-# Startup event to initialize DB
+# Startup event to initialize DB and display safe SMTP diagnostics
 @app.on_event("startup")
 async def startup():
     from app.database import init_db
     await init_db()
+
+    # Safe SMTP configuration diagnostics (only True/False, never values)
+    from app.config import settings
+    user_detected = bool((settings.smtp_username or os.getenv("SMTP_USERNAME", "")).strip())
+    pass_detected = bool((settings.smtp_password or os.getenv("SMTP_PASSWORD", "")).strip())
+
+    print("\n=======================================================", flush=True)
+    print("MediKiosk Email Configuration (Gmail SMTP):", flush=True)
+    print(f"  SMTP Server:            {settings.smtp_server}:{settings.smtp_port}", flush=True)
+    print(f"  SMTP_USERNAME detected: {user_detected}", flush=True)
+    print(f"  SMTP_PASSWORD detected: {pass_detected}", flush=True)
+    print("=======================================================\n", flush=True)
+
 
 # Health check
 @app.get("/health")
