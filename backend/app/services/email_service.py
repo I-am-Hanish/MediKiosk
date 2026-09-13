@@ -313,4 +313,4 @@ def send_report_email(patient: dict, consultations: Optional[list] = None) -> bo
     """
     return send_patient_id_email(patient)
 
-
+
