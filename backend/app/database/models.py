@@ -18,6 +18,7 @@ class Patient(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     consultations = relationship("Consultation", back_populates="patient", cascade="all, delete-orphan")
+    documents = relationship("MedicalDocument", back_populates="patient", cascade="all, delete-orphan")
 
 class Consultation(Base):
     __tablename__ = "consultations"
@@ -35,3 +36,28 @@ class Consultation(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     patient = relationship("Patient", back_populates="consultations")
+
+
+class MedicalDocument(Base):
+    __tablename__ = "medical_documents"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    patient_id = Column(String, ForeignKey("patients.id"), nullable=False, index=True)
+    document_type = Column(String, nullable=False)  # Prescription, Lab Report, Discharge Summary, Other
+    document_date = Column(String, nullable=False)  # YYYY-MM-DD
+    title = Column(String, default="")
+    file_name = Column(String, nullable=False)
+    file_path = Column(String, nullable=False)
+    file_type = Column(String, default="")          # MIME type (e.g. application/pdf, image/png)
+    file_size = Column(Integer, default=0)          # Size in bytes
+    diagnosis = Column(Text, default="")
+    medicines = Column(Text, default="")
+    investigation_name = Column(String, default="")
+    investigation_value = Column(String, default="")
+    reference_range = Column(String, default="")
+    range_status = Column(String, default="none")   # normal, high, low, out_of_range, none
+    notes = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    patient = relationship("Patient", back_populates="documents")
+

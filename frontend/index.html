@@ -754,20 +754,45 @@
                             Chronological Case History
                         </h3>
 
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
 
-                        <button type="button" class="btn btn-primary" onclick="goToAddConsultation()">
-
-                            <i data-lucide="plus-circle"></i>
-
-                            Create New Prescription
-
-                        </button>
+                            <button type="button" class="btn btn-primary" onclick="goToAddConsultation()">
+                                <i data-lucide="plus-circle"></i>
+                                Create New Prescription
+                            </button>
+                        </div>
 
                     </div>
 
 
                     <div class="timeline" id="patient-timeline">
                         <!-- Dynamic timeline entries -->
+                    </div>
+
+                    <!-- =====================================================
+                         MEDICAL DOCUMENTS & CLINICAL REPORTS SECTION
+                    ====================================================== -->
+                    <div class="patient-documents-section" id="patient-documents-section">
+                        <div class="documents-header">
+                            <div class="documents-header-left">
+                                <div class="documents-header-icon">
+                                    <i data-lucide="files"></i>
+                                </div>
+                                <div>
+                                    <h3 class="documents-title">Medical Documents</h3>
+                                    <p class="documents-subtitle">Attached lab reports, prescriptions, and clinical diagnostic files</p>
+                                </div>
+                                <span class="documents-count-badge" id="patient-documents-count">0 Documents</span>
+                            </div>
+                            <button type="button" class="btn btn-primary btn-sm" onclick="openUploadDocumentModal()">
+                                <i data-lucide="upload-cloud"></i>
+                                Upload Medical Document
+                            </button>
+                        </div>
+
+                        <div class="documents-grid" id="patient-documents-list">
+                            <!-- Populated dynamically via JS -->
+                        </div>
                     </div>
 
                 </div>
@@ -1142,6 +1167,262 @@
             <div style="margin-top: 20px; width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
                 <div id="journey-modal-action-wrap"></div>
                 <button type="button" class="btn btn-secondary" onclick="closeMedicalJourneyModal()">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- =========================================================
+         UPLOAD MEDICAL DOCUMENT & VERIFICATION MODAL
+    ========================================================== -->
+    <div id="upload-document-modal" class="modal-overlay">
+        <div class="upload-doc-modal-container">
+            <!-- Modal Header -->
+            <div class="scanner-header" style="margin-bottom: 12px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div class="journey-modal-icon-wrap node-document" style="width: 36px; height: 36px;">
+                        <i data-lucide="upload-cloud"></i>
+                    </div>
+                    <div>
+                        <h3 style="margin: 0; font-size: 1.15rem; font-family: var(--font-header);">
+                            Upload Medical Document
+                        </h3>
+                        <div style="font-size: 0.8rem; color: var(--text-muted); font-weight: 500;">
+                            Patient: <span id="upload-doc-patient-name" style="font-weight: 600; color: var(--text-main);">--</span>
+                            &bull; ID: <span id="upload-doc-patient-id" style="font-weight: 700; color: var(--accent-blue);">--</span>
+                        </div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" onclick="closeUploadDocumentModal()">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+
+            <!-- Modal Body Scrollable -->
+            <div class="upload-doc-modal-body">
+                <form id="upload-document-form" onsubmit="handleSaveMedicalDocument(event)">
+                    <!-- Row 1: Document Type & Date -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label class="form-label" for="doc-type-select">Document Type <span style="color: var(--danger);">*</span></label>
+                            <select id="doc-type-select" class="form-control" required onchange="handleDocTypeChange()">
+                                <option value="Prescription">Prescription</option>
+                                <option value="Lab Report">Lab Report</option>
+                                <option value="Discharge Summary">Discharge Summary</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label class="form-label" for="doc-date-input">Document Date <span style="color: var(--danger);">*</span></label>
+                            <input type="date" id="doc-date-input" class="form-control" required>
+                        </div>
+                    </div>
+
+                    <!-- Row 2: Document Title / Subject -->
+                    <div class="form-group" style="margin-bottom: 12px;">
+                        <label class="form-label" for="doc-title-input">Document Title / Clinical Subject</label>
+                        <input type="text" id="doc-title-input" class="form-control" placeholder="e.g. Fasting Blood Sugar Test, Cardiology Discharge Summary">
+                    </div>
+
+                    <!-- Row 3: File Upload Dropzone -->
+                    <div class="form-group" style="margin-bottom: 14px;">
+                        <label class="form-label">Attach File (PDF, PNG, JPG, WEBP, TXT) <span style="color: var(--danger);">*</span></label>
+                        <input type="file" id="doc-file-input" style="display: none;" accept=".pdf,.png,.jpg,.jpeg,.webp,.txt" onchange="handleDocumentFileSelected(event)">
+                        
+                        <div id="doc-dropzone" class="doc-upload-dropzone" onclick="document.getElementById('doc-file-input').click()">
+                            <div class="dropzone-icon">
+                                <i data-lucide="file-up"></i>
+                            </div>
+                            <div style="font-weight: 600; color: var(--text-main); font-size: 0.9rem; margin-bottom: 4px;">
+                                Click to select or drag & drop medical document
+                            </div>
+                            <div style="font-size: 0.78rem; color: var(--text-muted);">
+                                Supported: PDF, Image (PNG, JPG, WEBP), Text (TXT) &bull; Max 10MB
+                            </div>
+                        </div>
+
+                        <!-- Selected File Preview Bar -->
+                        <div id="doc-file-preview-bar" class="doc-file-preview-bar" style="display: none;">
+                            <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
+                                <div class="file-icon-badge" id="preview-file-icon">
+                                    <i data-lucide="file-text"></i>
+                                </div>
+                                <div style="min-width: 0;">
+                                    <div id="preview-file-name" style="font-weight: 600; font-size: 0.86rem; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">filename.pdf</div>
+                                    <div id="preview-file-meta" style="font-size: 0.75rem; color: var(--text-muted);">0 KB &bull; PDF</div>
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-outline btn-sm" onclick="clearSelectedDocumentFile(event)" title="Remove and select different file" style="padding: 4px 8px; font-size: 0.75rem;">
+                                <i data-lucide="trash-2"></i> Remove
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Row 4: Optional Report Text / OCR Excerpt -->
+                    <div class="doc-text-extract-toggle" style="margin-bottom: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <label class="form-label" style="margin-bottom: 0;">Report Text / Notes Excerpt <span style="font-size: 0.72rem; color: var(--text-muted); font-weight: normal;">(Optional - for instant field extraction)</span></label>
+                            <button type="button" class="btn-extract-helper" onclick="runDocumentTextExtraction()">
+                                <i data-lucide="sparkles"></i> Extract Fields
+                            </button>
+                        </div>
+                        <textarea
+                            id="doc-raw-text"
+                            class="form-control"
+                            style="
+                                width: 100%;
+                                min-height: 120px;
+                                height: 120px;
+                                max-height: 300px;
+                                resize: none;
+                                overflow-y: hidden;
+                                transition: height 0.1s ease;
+                                box-sizing: border-box;
+                                display: block;
+                            "
+                            placeholder="Paste report text or clinical notes here to automatically identify fields (e.g. Diagnosis: ..., Medicines: ..., Result: ..., Range: ...)"
+                            oninput="handleReportTextInput()"
+                        ></textarea>
+                    </div>
+
+                    <!-- =========================================================
+                         DOCUMENT INTELLIGENCE & CLINICAL VERIFICATION FORM
+                    ========================================================== -->
+                    <div class="verification-panel">
+                        <div class="verification-panel-header">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <i data-lucide="check-check" style="color: var(--accent-teal);"></i>
+                                <span style="font-weight: 700; font-size: 0.88rem; color: var(--primary);">Clinical Intelligence & Verification</span>
+                            </div>
+                            <span class="verification-tag">Review & Edit</span>
+                        </div>
+                        <div class="verification-panel-hint">
+                            Verify or enter the clinical details below. Verified fields are saved with the document and integrated into the patient timeline.
+                        </div>
+
+                        <!-- Diagnosis Field -->
+                        <div class="form-group" style="margin-bottom: 10px;">
+                            <label class="form-label" for="doc-verify-diagnosis">Diagnosis / Clinical Finding</label>
+                            <input type="text" id="doc-verify-diagnosis" class="form-control" placeholder="e.g. Type 2 Diabetes Mellitus, Bronchial Asthma">
+                        </div>
+
+                        <!-- Medicines / Regimen Field -->
+                        <div class="form-group" style="margin-bottom: 10px;" id="doc-medicines-group">
+                            <label class="form-label" for="doc-verify-medicines">Medicines & Prescribed Regimen</label>
+                            <textarea id="doc-verify-medicines" class="form-control" rows="2" placeholder="e.g. Tab Metformin 500mg BD after food, Tab Atorvastatin 10mg HS"></textarea>
+                        </div>
+
+                        <!-- Lab Report Investigation & Range Fields -->
+                        <div class="lab-fields-container" id="doc-lab-fields-container" style="display: none;">
+                            <div class="form-group" style="margin-bottom: 10px;">
+                                <label class="form-label" for="doc-verify-inv-name">Investigation / Test Name</label>
+                                <input type="text" id="doc-verify-inv-name" class="form-control" placeholder="e.g. Fasting Blood Sugar, HbA1c, Serum Creatinine">
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px;">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label class="form-label" for="doc-verify-inv-value">Investigation Result / Value</label>
+                                    <input type="text" id="doc-verify-inv-value" class="form-control" placeholder="e.g. 142 mg/dL" oninput="handleLabRangeLiveCheck()">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label class="form-label" for="doc-verify-ref-range">Reference Range</label>
+                                    <input type="text" id="doc-verify-ref-range" class="form-control" placeholder="e.g. 70 - 100 mg/dL" oninput="handleLabRangeLiveCheck()">
+                                </div>
+                            </div>
+
+                            <!-- Real-time Lab Range Indicator preview box -->
+                            <div id="doc-verify-range-indicator" class="range-indicator-preview" style="display: none;">
+                                <div id="range-indicator-content"></div>
+                            </div>
+                        </div>
+
+                        <!-- Important Notes -->
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label class="form-label" for="doc-verify-notes">Important Notes / Clinical Remarks</label>
+                            <textarea id="doc-verify-notes" class="form-control" rows="2" placeholder="e.g. Fasting maintained for 10 hours. Patient advised follow-up after 4 weeks."></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons Footer -->
+                    <div style="margin-top: 16px; display: flex; justify-content: flex-end; gap: 10px; align-items: center;">
+                        <button type="button" class="btn btn-secondary" onclick="closeUploadDocumentModal()">
+                            Cancel
+                        </button>
+                        <button type="submit" class="btn btn-primary" id="btn-save-doc-submit">
+                            <i data-lucide="check"></i> Save Medical Document
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- =========================================================
+         VIEW ORIGINAL MEDICAL DOCUMENT & CLINICAL DETAILS MODAL
+    ========================================================== -->
+    <div id="view-document-modal" class="modal-overlay">
+        <div class="view-doc-modal-container">
+            <!-- Header -->
+            <div class="scanner-header" style="margin-bottom: 12px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div class="journey-modal-icon-wrap node-document" id="view-doc-type-icon" style="width: 36px; height: 36px;">
+                        <i data-lucide="file-text"></i>
+                    </div>
+                    <div>
+                        <h3 id="view-doc-modal-title" style="margin: 0; font-size: 1.15rem; font-family: var(--font-header);">
+                            Medical Document
+                        </h3>
+                        <div id="view-doc-modal-meta" style="font-size: 0.8rem; color: var(--text-muted); font-weight: 500;">
+                            --
+                        </div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" onclick="closeViewDocumentModal()">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+
+            <!-- View Modal Layout (File preview + Verified intelligence) -->
+            <div class="view-doc-modal-body">
+                <!-- Left: Original Document File View -->
+                <div class="view-doc-file-pane">
+                    <div class="view-doc-pane-header">
+                        <span style="font-weight: 600; font-size: 0.82rem; color: var(--text-main); display: flex; align-items: center; gap: 6px;">
+                            <i data-lucide="eye"></i> Original Uploaded Document
+                        </span>
+                        <a id="view-doc-open-external" href="#" target="_blank" class="btn-open-tab" style="display: inline-flex; align-items: center; gap: 4px;">
+                            <i data-lucide="external-link"></i> Full View
+                        </a>
+                    </div>
+                    <div class="view-doc-file-frame" id="view-doc-file-frame">
+                        <!-- Injected: iframe for PDF, img for Image, or text block -->
+                    </div>
+                </div>
+
+                <!-- Right: Verified Clinical Intelligence -->
+                <div class="view-doc-info-pane">
+                    <div class="view-doc-pane-header">
+                        <span style="font-weight: 600; font-size: 0.82rem; color: var(--text-main); display: flex; align-items: center; gap: 6px;">
+                            <i data-lucide="clipboard-check"></i> Verified Clinical Details
+                        </span>
+                        <span id="view-doc-status-badge" class="badge">--</span>
+                    </div>
+
+                    <div id="view-doc-intelligence-content" class="view-doc-intelligence-content">
+                        <!-- Populated dynamically via JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div style="margin-top: 14px; display: flex; justify-content: flex-end; gap: 10px;">
+                <a id="view-doc-download-btn" href="#" target="_blank" class="btn btn-outline btn-sm">
+                    <i data-lucide="download"></i> Download File
+                </a>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="closeViewDocumentModal()">
                     Close
                 </button>
             </div>

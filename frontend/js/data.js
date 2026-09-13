@@ -190,3 +190,70 @@ async function apiUpdateConsultation(consultationId, consultationData) {
 
     return await response.json();
 }
+
+/**
+ * Uploads a medical document with verified clinical intelligence for the given patient ID.
+ * @param {string} patientId - The patient ID
+ * @param {Object} documentData - { document_type, document_date, title, file_name, file_data, file_type, diagnosis, medicines, investigation_name, investigation_value, reference_range, range_status, notes }
+ * @returns {Promise<Object>} The uploaded document response
+ */
+async function apiUploadMedicalDocument(patientId, documentData) {
+    const cleanId = encodeURIComponent(String(patientId || '').trim().toUpperCase());
+    const response = await fetch(
+        `${API_BASE_URL}/api/patient/${cleanId}/document`,
+        {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(documentData)
+        }
+    );
+
+    if (!response.ok) {
+        let errorMsg = "Failed to upload medical document.";
+        try {
+            const err = await response.json();
+            errorMsg = parseApiError(err, response.statusText, errorMsg);
+        } catch (_) {
+            errorMsg = response.statusText || errorMsg;
+        }
+        throw new Error(errorMsg);
+    }
+
+    return await response.json();
+}
+
+/**
+ * Retrieves all medical documents attached to the given patient ID.
+ * @param {string} patientId - The patient ID
+ * @returns {Promise<Object>} { patient_id, documents }
+ */
+async function apiGetPatientDocuments(patientId) {
+    const cleanId = encodeURIComponent(String(patientId || '').trim().toUpperCase());
+    const response = await fetch(
+        `${API_BASE_URL}/api/patient/${cleanId}/documents`
+    );
+
+    if (!response.ok) {
+        let errorMsg = "Failed to load medical documents.";
+        try {
+            const err = await response.json();
+            errorMsg = parseApiError(err, response.statusText, errorMsg);
+        } catch (_) {
+            errorMsg = response.statusText || errorMsg;
+        }
+        throw new Error(errorMsg);
+    }
+
+    return await response.json();
+}
+
+/**
+ * Generates the direct URL for streaming/viewing the original medical document file.
+ * @param {number|string} documentId - The document primary key ID
+ * @returns {string} The direct file stream URL
+ */
+function apiGetDocumentFileUrl(documentId) {
+    return `${API_BASE_URL}/api/patient/document/${encodeURIComponent(documentId)}/file`;
+}

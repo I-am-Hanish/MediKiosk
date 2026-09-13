@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, Response
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func
@@ -6,12 +7,19 @@ from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 from app.database import get_db
-from app.database.models import Patient, Consultation
+from app.database.models import Patient, Consultation, MedicalDocument
 from datetime import datetime
 import re
+import os
+import base64
 from app.services.email_service import send_patient_id_email, send_report_email, generate_qr_bytes, mask_email
 
 router = APIRouter()
+
+BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+UPLOADS_DIR = os.path.join(BACKEND_DIR, "uploads", "documents")
+
+
 
 
 
@@ -57,6 +65,79 @@ class ConsultationUpdate(BaseModel):
     diagnosis: str = Field(..., min_length=1)
     treatment: str = Field(..., min_length=1)
     notes: Optional[str] = ""
+
+class DocumentUploadRequest(BaseModel):
+    document_type: str = Field(..., min_length=1)  # Prescription, Lab Report, Discharge Summary, Other
+    document_date: str = Field(..., min_length=1)  # YYYY-MM-DD
+    title: Optional[str] = ""
+    file_name: str = Field(..., min_length=1)
+    file_data: str = Field(..., min_length=1)      # Base64 data URI string (e.g. data:application/pdf;base64,...)
+    file_type: Optional[str] = ""
+    diagnosis: Optional[str] = ""
+    medicines: Optional[str] = ""
+    investigation_name: Optional[str] = ""
+    investigation_value: Optional[str] = ""
+    reference_range: Optional[str] = ""
+    range_status: Optional[str] = "none"
+    notes: Optional[str] = ""
+
+def evaluate_lab_range(value_str: Optional[str], range_str: Optional[str]) -> str:
+    """
+    Safely evaluate if a numerical lab value is within, above, or below a reference range.
+    Objective calculation only — does not diagnose or interpret clinical conditions.
+    Returns: 'normal', 'high', 'low', 'out_of_range', or 'none'.
+    """
+    if not value_str or not range_str:
+        return "none"
+
+    val_clean = str(value_str).strip()
+    range_clean = str(range_str).strip()
+
+    # Find the primary numerical float in the value
+    val_match = re.search(r"[-+]?\d+(?:\.\d+)?", val_clean)
+    if not val_match:
+        return "none"
+
+    try:
+        val = float(val_match.group(0))
+    except (ValueError, TypeError):
+        return "none"
+
+    # Case 1: Min - Max interval (e.g. '70 - 100', '70-100', '70 to 100', '13.5 - 17.5')
+    range_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:-|–|to)\s*(\d+(?:\.\d+)?)", range_clean, re.IGNORECASE)
+    if range_match:
+        try:
+            low = float(range_match.group(1))
+            high = float(range_match.group(2))
+            if val < low:
+                return "low"
+            elif val > high:
+                return "high"
+            else:
+                return "normal"
+        except (ValueError, TypeError):
+            pass
+
+    # Case 2: Upper limit (e.g. '< 200', '<= 200', 'under 200', 'less than 200')
+    max_match = re.search(r"(?:<|<=|less\s+than|under)\s*(\d+(?:\.\d+)?)", range_clean, re.IGNORECASE)
+    if max_match:
+        try:
+            max_val = float(max_match.group(1))
+            return "high" if val > max_val else "normal"
+        except (ValueError, TypeError):
+            pass
+
+    # Case 3: Lower limit (e.g. '> 50', '>= 50', 'greater than 50', 'over 50')
+    min_match = re.search(r"(?:>|>=|greater\s+than|over)\s*(\d+(?:\.\d+)?)", range_clean, re.IGNORECASE)
+    if min_match:
+        try:
+            min_val = float(min_match.group(1))
+            return "low" if val < min_val else "normal"
+        except (ValueError, TypeError):
+            pass
+
+    return "none"
+
 
 def generate_smart_summary(consultations: List[Consultation]) -> str:
     if not consultations:
@@ -363,6 +444,35 @@ async def get_patient_history(patient_id: str, db: AsyncSession = Depends(get_db
             "notes": c.notes
         })
 
+    # Retrieve all medical documents for patient, ordered chronologically (newest first)
+    result_docs = await db.execute(
+        select(MedicalDocument)
+        .where(MedicalDocument.patient_id == patient.id)
+        .order_by(MedicalDocument.document_date.desc(), MedicalDocument.id.desc())
+    )
+    documents = result_docs.scalars().all()
+
+    doc_history = []
+    for d in documents:
+        doc_history.append({
+            "id": d.id,
+            "patient_id": d.patient_id,
+            "document_type": d.document_type,
+            "document_date": d.document_date,
+            "title": d.title,
+            "file_name": d.file_name,
+            "file_type": d.file_type,
+            "file_size": d.file_size,
+            "diagnosis": d.diagnosis,
+            "medicines": d.medicines,
+            "investigation_name": d.investigation_name,
+            "investigation_value": d.investigation_value,
+            "reference_range": d.reference_range,
+            "range_status": d.range_status,
+            "notes": d.notes,
+            "created_at": d.created_at.isoformat() if d.created_at else None
+        })
+
     # Ensure dynamic summary is always up-to-date
     dynamic_summary = generate_smart_summary(consultations)
 
@@ -379,8 +489,10 @@ async def get_patient_history(patient_id: str, db: AsyncSession = Depends(get_db
             "summary": dynamic_summary,
             "created_at": patient.created_at.isoformat() if patient.created_at else None
         },
-        "consultations": history
+        "consultations": history,
+        "documents": doc_history
     }
+
 
 @router.post("/consultation")
 async def add_consultation(data: ConsultationCreate, db: AsyncSession = Depends(get_db)):
@@ -429,4 +541,188 @@ async def update_consultation(consultation_id: int):
         status_code=403,
         detail="Prescription history is immutable. Previous prescriptions cannot be edited or overwritten. Please create a new prescription."
     )
+
+
+# ============================================================
+# MEDICAL DOCUMENT UPLOAD & MANAGEMENT ENDPOINTS
+# ============================================================
+
+@router.post("/{patient_id}/document")
+async def upload_patient_document(
+    patient_id: str,
+    data: DocumentUploadRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Upload and attach a medical document to the current Patient ID.
+    Decodes the base64 file data, stores the file safely in uploads/documents,
+    records clinical intelligence, and inserts the record into medical_documents.
+    """
+    clean_id = (patient_id or "").strip().upper()
+    patient = await db.get(Patient, clean_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found. Invalid Patient ID.")
+
+    # Determine range status for lab reports
+    final_range_status = data.range_status or "none"
+    if data.document_type == "Lab Report" and final_range_status in ("none", "", None):
+        final_range_status = evaluate_lab_range(data.investigation_value, data.reference_range)
+
+    # Process and save the file safely
+    os.makedirs(UPLOADS_DIR, exist_ok=True)
+    raw_b64 = data.file_data
+    mime_type = data.file_type or "application/octet-stream"
+
+    # Extract MIME type and pure base64 string if data URL format
+    if "," in raw_b64 and raw_b64.startswith("data:"):
+        header, b64_content = raw_b64.split(",", 1)
+        if ";" in header and ":" in header:
+            mime_type = header.split(";")[0].replace("data:", "").strip()
+    else:
+        b64_content = raw_b64
+
+    try:
+        file_bytes = base64.b64decode(b64_content)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid file encoding: {str(e)}")
+
+    file_size = len(file_bytes)
+
+    # Generate unique, safe filename
+    clean_filename = re.sub(r"[^a-zA-Z0-9_.-]", "_", data.file_name.strip()) or "document.bin"
+    timestamp_str = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    unique_file_name = f"{clean_id}_{timestamp_str}_{clean_filename}"
+    saved_file_path = os.path.join(UPLOADS_DIR, unique_file_name)
+
+    try:
+        with open(saved_file_path, "wb") as f:
+            f.write(file_bytes)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to write document file to disk: {str(e)}")
+
+    # Create new database record
+    new_doc = MedicalDocument(
+        patient_id=clean_id,
+        document_type=data.document_type.strip(),
+        document_date=data.document_date.strip(),
+        title=data.title.strip() if data.title else clean_filename,
+        file_name=clean_filename,
+        file_path=saved_file_path,
+        file_type=mime_type,
+        file_size=file_size,
+        diagnosis=data.diagnosis.strip() if data.diagnosis else "",
+        medicines=data.medicines.strip() if data.medicines else "",
+        investigation_name=data.investigation_name.strip() if data.investigation_name else "",
+        investigation_value=data.investigation_value.strip() if data.investigation_value else "",
+        reference_range=data.reference_range.strip() if data.reference_range else "",
+        range_status=final_range_status,
+        notes=data.notes.strip() if data.notes else ""
+    )
+
+    db.add(new_doc)
+    try:
+        await db.commit()
+        await db.refresh(new_doc)
+    except Exception as e:
+        await db.rollback()
+        # Clean up saved file on rollback
+        if os.path.exists(saved_file_path):
+            try:
+                os.remove(saved_file_path)
+            except Exception:
+                pass
+        raise HTTPException(status_code=500, detail=f"Database error while saving document: {str(e)}")
+
+    return {
+        "status": "success",
+        "message": "Medical document saved successfully.",
+        "document": {
+            "id": new_doc.id,
+            "patient_id": new_doc.patient_id,
+            "document_type": new_doc.document_type,
+            "document_date": new_doc.document_date,
+            "title": new_doc.title,
+            "file_name": new_doc.file_name,
+            "file_type": new_doc.file_type,
+            "file_size": new_doc.file_size,
+            "diagnosis": new_doc.diagnosis,
+            "medicines": new_doc.medicines,
+            "investigation_name": new_doc.investigation_name,
+            "investigation_value": new_doc.investigation_value,
+            "reference_range": new_doc.reference_range,
+            "range_status": new_doc.range_status,
+            "notes": new_doc.notes,
+            "created_at": new_doc.created_at.isoformat() if new_doc.created_at else None
+        }
+    }
+
+
+@router.get("/{patient_id}/documents")
+async def get_patient_documents(patient_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Retrieve all medical documents belonging to the specified Patient ID.
+    Strictly queries only the requested patient's documents for patient safety.
+    """
+    clean_id = (patient_id or "").strip().upper()
+    patient = await db.get(Patient, clean_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found.")
+
+    result = await db.execute(
+        select(MedicalDocument)
+        .where(MedicalDocument.patient_id == clean_id)
+        .order_by(MedicalDocument.document_date.desc(), MedicalDocument.id.desc())
+    )
+    docs = result.scalars().all()
+
+    return {
+        "patient_id": clean_id,
+        "documents": [
+            {
+                "id": d.id,
+                "patient_id": d.patient_id,
+                "document_type": d.document_type,
+                "document_date": d.document_date,
+                "title": d.title,
+                "file_name": d.file_name,
+                "file_type": d.file_type,
+                "file_size": d.file_size,
+                "diagnosis": d.diagnosis,
+                "medicines": d.medicines,
+                "investigation_name": d.investigation_name,
+                "investigation_value": d.investigation_value,
+                "reference_range": d.reference_range,
+                "range_status": d.range_status,
+                "notes": d.notes,
+                "created_at": d.created_at.isoformat() if d.created_at else None
+            }
+            for d in docs
+        ]
+    }
+
+
+@router.get("/document/{document_id}/file")
+async def get_document_file(document_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Serve the original uploaded medical document file for viewing and verification.
+    Sets inline Content-Disposition so browsers can open PDFs and images directly.
+    """
+    doc = await db.get(MedicalDocument, document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    if not os.path.exists(doc.file_path):
+        raise HTTPException(status_code=404, detail="Document file not found on disk.")
+
+    media_type = doc.file_type or "application/octet-stream"
+    return FileResponse(
+        path=doc.file_path,
+        media_type=media_type,
+        filename=doc.file_name,
+        headers={
+            "Content-Disposition": f'inline; filename="{doc.file_name}"',
+            "Cache-Control": "private, max-age=3600"
+        }
+    )
+
 

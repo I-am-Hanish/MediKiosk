@@ -55,6 +55,10 @@ async def startup():
     from app.database import init_db
     await init_db()
 
+    # Ensure document upload directory exists
+    uploads_dir = os.path.join(BASE_DIR, "backend", "uploads", "documents")
+    os.makedirs(uploads_dir, exist_ok=True)
+
     # Safe SMTP configuration diagnostics (only True/False, never values)
     from app.config import settings
     user_detected = bool((settings.smtp_username or os.getenv("SMTP_USERNAME", "")).strip())

@@ -6,6 +6,9 @@
 let activePatient = null;
 let currentScreen = "screen-registration";
 let loadedConsultations = [];
+let loadedDocuments = [];
+let selectedDocumentFile = null;
+
 
 let html5QrCode = null;
 let isScanning = false;
@@ -1247,6 +1250,10 @@ async function renderCaseHistory() {
         loadedConsultations =
             data.consultations || [];
 
+        loadedDocuments =
+            data.documents || [];
+
+
         const setText =
             (id, value) => {
 
@@ -1330,16 +1337,37 @@ async function renderCaseHistory() {
             );
 
         if (summaryElement) {
-
-            summaryElement.innerText =
+            const rawSummary =
                 loadedConsultations.length === 0
                     ? "No consultation history available yet."
                     : activePatient.summary ||
                     "No consultation history available yet.";
+
+            // Render compactly with View More toggle for long summaries
+            const SUMMARY_LIMIT = 160;
+            if (rawSummary.length <= SUMMARY_LIMIT) {
+                summaryElement.innerHTML = `<span>${escapeHtml(rawSummary)}</span>`;
+            } else {
+                const preview = escapeHtml(rawSummary.slice(0, SUMMARY_LIMIT));
+                const rest = escapeHtml(rawSummary.slice(SUMMARY_LIMIT));
+                summaryElement.innerHTML = `
+                    <span id="summary-preview-text">${preview}<span id="summary-rest-text" style="display:none;">${rest}</span>&hellip;</span>
+                    <button
+                        type="button"
+                        class="btn-summary-toggle"
+                        id="summary-toggle-btn"
+                        onclick="toggleSmartSummary()"
+                    >View More</button>
+                `;
+            }
         }
 
         // Render compact horizontal Automatic Medical Journey Timeline
-        renderMedicalJourneyTimeline(activePatient, loadedConsultations);
+        renderMedicalJourneyTimeline(activePatient, loadedConsultations, loadedDocuments);
+
+        // Render Medical Documents Section
+        renderPatientDocuments(loadedDocuments);
+
 
         const timelineContainer =
             document.getElementById(
@@ -1430,19 +1458,6 @@ async function renderCaseHistory() {
                 )}
 
                             </div>
-
-                            <button
-                                type="button"
-                                class="btn btn-outline btn-sm"
-                                onclick="openViewConsultation(${Number(consult.id)})"
-                                title="View Prescription Details"
-                            >
-
-                                <i data-lucide="eye"></i>
-
-                                View
-
-                            </button>
 
                         </div>
 
@@ -1614,7 +1629,31 @@ async function renderCaseHistory() {
 }
 
 // ============================================================
-// ADD CONSULTATION
+// SMART SUMMARY VIEW MORE / LESS TOGGLE
+// ============================================================
+
+function toggleSmartSummary() {
+    const restEl = document.getElementById("summary-rest-text");
+    const ellipsisEl = document.querySelector("#summary-preview-text > span:last-child");
+    const btn = document.getElementById("summary-toggle-btn");
+    if (!restEl || !btn) return;
+
+    const isCollapsed = restEl.style.display === "none";
+    if (isCollapsed) {
+        restEl.style.display = "inline";
+        // hide the ellipsis span if present
+        const previewSpan = document.getElementById("summary-preview-text");
+        if (previewSpan) {
+            const hellip = previewSpan.querySelector(".summary-ellipsis");
+            if (hellip) hellip.style.display = "none";
+        }
+        btn.innerText = "View Less";
+    } else {
+        restEl.style.display = "none";
+        btn.innerText = "View More";
+    }
+}
+
 // ============================================================
 
 function goToAddConsultation() {
@@ -1795,7 +1834,7 @@ function formatTimelineDate(rawDate) {
     }
 }
 
-function extractMedicalTimelineEvents(patient, consultations = []) {
+function extractMedicalTimelineEvents(patient, consultations = [], documents = []) {
     if (!patient) return [];
 
     const events = [];
@@ -1943,10 +1982,63 @@ function extractMedicalTimelineEvents(patient, consultations = []) {
         }
     });
 
+    // 3. MEDICAL DOCUMENTS (Prescriptions, Lab Reports, Discharge Summaries, Other)
+    if (Array.isArray(documents) && documents.length > 0) {
+        documents.forEach(doc => {
+            let docTitle = doc.document_type || "Medical Document";
+            let docIcon = "file-text";
+            let docColor = "node-document";
+
+            if (doc.document_type === "Lab Report") {
+                docTitle = "Lab Report";
+                docIcon = "flask-conical";
+                docColor = "node-investigation";
+            } else if (doc.document_type === "Prescription") {
+                docTitle = "Prescription";
+                docIcon = "pill";
+                docColor = "node-prescription";
+            } else if (doc.document_type === "Discharge Summary") {
+                docTitle = "Discharge Summary";
+                docIcon = "clipboard-list";
+                docColor = "node-document";
+            }
+
+            let subtext = doc.investigation_name || doc.diagnosis || doc.title || doc.file_name || "Document";
+            if (subtext.length > 20) subtext = subtext.slice(0, 18) + "...";
+
+            events.push({
+                id: `doc-${doc.id}`,
+                type: 'document',
+                typeKey: 'document',
+                title: docTitle,
+                date: doc.document_date,
+                displayDate: formatTimelineDate(doc.document_date),
+                icon: docIcon,
+                colorClass: docColor,
+                subtext: subtext,
+                consultationId: null,
+                documentId: doc.id,
+                isDocument: true,
+                data: doc
+            });
+        });
+    }
+
+    // Sort all events chronologically (registration milestone stays at start)
+    const regEvent = events.shift();
+    events.sort((a, b) => {
+        const timeA = new Date(a.date || 0).getTime();
+        const timeB = new Date(b.date || 0).getTime();
+        return timeA - timeB;
+    });
+    if (regEvent) {
+        events.unshift(regEvent);
+    }
+
     return events;
 }
 
-function renderMedicalJourneyTimeline(patient, consultations = []) {
+function renderMedicalJourneyTimeline(patient, consultations = [], documents = []) {
     const card = document.getElementById("medical-journey-card");
     const track = document.getElementById("medical-journey-track");
     const countBadge = document.getElementById("timeline-milestone-count");
@@ -1958,8 +2050,9 @@ function renderMedicalJourneyTimeline(patient, consultations = []) {
         return;
     }
 
-    // Extract automatic chronological events
-    activeTimelineEvents = extractMedicalTimelineEvents(patient, consultations);
+    // Extract automatic chronological events including medical documents
+    activeTimelineEvents = extractMedicalTimelineEvents(patient, consultations, documents);
+
 
     if (countBadge) {
         countBadge.innerText = `${activeTimelineEvents.length} Milestones`;
@@ -2067,6 +2160,105 @@ function openMedicalJourneyModal(eventIndex) {
             </div>
         `;
         if (actionWrap) actionWrap.innerHTML = "";
+    } else if (ev.isDocument || ev.typeKey === "document" || (ev.data && ev.data.file_name)) {
+        // Medical Document Milestone
+        const d = ev.data;
+        let intelHtml = "";
+
+        if (d.document_type === "Lab Report" || d.investigation_name || d.investigation_value) {
+            const rangeClass = (d.range_status || "none").toLowerCase();
+            let rangeBadgeHtml = "";
+            if (rangeClass === "high") {
+                rangeBadgeHtml = `<span class="range-badge high"><i data-lucide="alert-triangle"></i> Above Reference Range (High)</span>`;
+            } else if (rangeClass === "low") {
+                rangeBadgeHtml = `<span class="range-badge low"><i data-lucide="alert-triangle"></i> Below Reference Range (Low)</span>`;
+            } else if (rangeClass === "normal") {
+                rangeBadgeHtml = `<span class="range-badge normal"><i data-lucide="check-circle"></i> Within Reference Range</span>`;
+            } else if (rangeClass === "out_of_range") {
+                rangeBadgeHtml = `<span class="range-badge out_of_range"><i data-lucide="alert-triangle"></i> Outside Reference Range</span>`;
+            }
+
+            intelHtml += `
+                <div class="detail-block" style="background: var(--bg-body); padding: 10px 14px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color);">
+                    <span style="font-size: 0.72rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 2px;">Investigation / Lab Test</span>
+                    <div style="font-weight: 700; color: var(--accent-teal); font-size: 0.95rem;">${escapeHtml(d.investigation_name || d.title || 'Laboratory Report')}</div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="detail-block" style="background: var(--bg-body); padding: 10px 14px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color);">
+                        <span style="font-size: 0.72rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 2px;">Observed Value</span>
+                        <div style="font-weight: 700; color: var(--text-main); font-size: 0.95rem;">${escapeHtml(d.investigation_value || 'Not specified')}</div>
+                        ${rangeBadgeHtml}
+                    </div>
+                    <div class="detail-block" style="background: var(--bg-body); padding: 10px 14px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color);">
+                        <span style="font-size: 0.72rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 2px;">Reference Range</span>
+                        <div style="color: var(--text-muted); font-weight: 600; font-size: 0.88rem;">${escapeHtml(d.reference_range || 'Not specified')}</div>
+                        <div class="range-disclaimer">Clinical indicator only (no automated diagnosis)</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        if (d.diagnosis) {
+            intelHtml += `
+                <div class="detail-block" style="background: var(--bg-body); padding: 10px 14px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color);">
+                    <span style="font-size: 0.72rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 2px;">Clinical Diagnosis</span>
+                    <div style="color: var(--danger); font-weight: 600; font-size: 0.88rem;">${escapeHtml(d.diagnosis)}</div>
+                </div>
+            `;
+        }
+
+        if (d.medicines) {
+            intelHtml += `
+                <div class="detail-block" style="background: var(--bg-body); padding: 10px 14px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color);">
+                    <span style="font-size: 0.72rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 2px;">Prescribed Medicines & Regimen</span>
+                    <div style="color: var(--accent-teal); font-weight: 600; font-size: 0.88rem; white-space: pre-wrap;">${escapeHtml(d.medicines)}</div>
+                </div>
+            `;
+        }
+
+        if (d.notes) {
+            intelHtml += `
+                <div class="detail-block" style="background: var(--bg-body); padding: 10px 14px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color);">
+                    <span style="font-size: 0.72rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 2px;">Clinical Notes / Remarks</span>
+                    <div style="color: var(--text-muted); font-size: 0.85rem; font-style: italic;">${escapeHtml(d.notes)}</div>
+                </div>
+            `;
+        }
+
+        bodyHtml = `
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="detail-block" style="background: var(--bg-body); padding: 10px 14px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color);">
+                    <span style="font-size: 0.72rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 2px;">Document Type</span>
+                    <div style="font-weight: 700; color: var(--accent-blue); font-size: 0.9rem;">${escapeHtml(d.document_type || 'Medical Document')}</div>
+                </div>
+                <div class="detail-block" style="background: var(--bg-body); padding: 10px 14px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color);">
+                    <span style="font-size: 0.72rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 2px;">Document Date</span>
+                    <div style="font-weight: 600; color: var(--text-main); font-size: 0.9rem;">${escapeHtml(d.document_date || 'N/A')}</div>
+                </div>
+            </div>
+            <div class="detail-block" style="background: var(--bg-body); padding: 10px 14px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color);">
+                <span style="font-size: 0.72rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 2px;">Attached File</span>
+                <div style="font-weight: 600; color: var(--text-main); font-size: 0.86rem; display: flex; align-items: center; gap: 6px;">
+                    <i data-lucide="file-text"></i> ${escapeHtml(d.file_name || 'Document File')} &bull; ${Math.round((d.file_size || 0) / 1024)} KB
+                </div>
+            </div>
+            ${intelHtml}
+        `;
+
+        if (actionWrap && d.id) {
+            actionWrap.innerHTML = `
+                <button
+                    type="button"
+                    class="btn btn-primary btn-sm"
+                    onclick="closeMedicalJourneyModal(); openViewDocumentModal(${Number(d.id)});"
+                >
+                    <i data-lucide="eye"></i>
+                    View Original Document
+                </button>
+            `;
+        } else if (actionWrap) {
+            actionWrap.innerHTML = "";
+        }
     } else {
         const c = ev.data;
         bodyHtml = `
@@ -2513,4 +2705,765 @@ function closeMobileNav() {
         overlay.classList.remove("active");
     }
 }
+
+// ============================================================
+// MEDICAL DOCUMENTS & SIMPLE INTELLIGENCE CONTROLLER
+// ============================================================
+
+function renderPatientDocuments(documents = []) {
+    const section = document.getElementById("patient-documents-section");
+    const countBadge = document.getElementById("patient-documents-count");
+    const listContainer = document.getElementById("patient-documents-list");
+
+    if (!section || !listContainer) return;
+
+    if (countBadge) {
+        countBadge.innerText = `${documents.length} Document${documents.length === 1 ? '' : 's'}`;
+    }
+
+    if (!documents || documents.length === 0) {
+        listContainer.innerHTML = `
+            <div class="empty-documents">
+                <i data-lucide="folder-open"></i>
+                <div style="font-weight: 600; font-size: 0.95rem; margin-bottom: 4px; color: var(--text-main);">
+                    No medical documents uploaded yet
+                </div>
+                <div style="font-size: 0.8rem; margin-bottom: 14px; max-width: 320px;">
+                    Upload lab reports, prescriptions, or discharge summaries to store against this patient profile.
+                </div>
+                <button type="button" class="btn btn-outline btn-sm" onclick="openUploadDocumentModal()">
+                    <i data-lucide="upload-cloud"></i> Upload Medical Document
+                </button>
+            </div>
+        `;
+        if (typeof lucide !== "undefined") {
+            lucide.createIcons();
+        }
+        return;
+    }
+
+    let cardsHtml = "";
+    documents.forEach(doc => {
+        const typeClass = (doc.document_type || "other").toLowerCase().replace(/\s+/g, "-");
+        let typeBadge = `<span class="doc-type-badge doc-type-${typeClass}">${escapeHtml(doc.document_type || 'Document')}</span>`;
+
+        let intelContent = "";
+        if (doc.document_type === "Lab Report" || doc.investigation_name || doc.investigation_value) {
+            const rangeClass = (doc.range_status || "none").toLowerCase();
+            let rangeBadge = "";
+            if (rangeClass === "high") {
+                rangeBadge = `<span class="range-badge high"><i data-lucide="alert-triangle"></i> Above Reference Range (High)</span>`;
+            } else if (rangeClass === "low") {
+                rangeBadge = `<span class="range-badge low"><i data-lucide="alert-triangle"></i> Below Reference Range (Low)</span>`;
+            } else if (rangeClass === "normal") {
+                rangeBadge = `<span class="range-badge normal"><i data-lucide="check-circle"></i> Within Reference Range</span>`;
+            } else if (rangeClass === "out_of_range") {
+                rangeBadge = `<span class="range-badge out_of_range"><i data-lucide="alert-triangle"></i> Outside Reference Range</span>`;
+            }
+
+            intelContent = `
+                <div class="doc-card-intel">
+                    <div class="doc-intel-row">
+                        <span class="doc-intel-label">Test:</span>
+                        <span class="doc-intel-value" style="color: var(--accent-teal);">${escapeHtml(doc.investigation_name || doc.title || 'Lab Test')}</span>
+                    </div>
+                    <div class="doc-intel-row">
+                        <span class="doc-intel-label">Observed:</span>
+                        <span class="doc-intel-value">${escapeHtml(doc.investigation_value || 'N/A')}</span>
+                    </div>
+                    ${doc.reference_range ? `
+                        <div class="doc-intel-row">
+                            <span class="doc-intel-label">Reference:</span>
+                            <span class="doc-intel-value" style="color: var(--text-muted);">${escapeHtml(doc.reference_range)}</span>
+                        </div>
+                    ` : ''}
+                    ${rangeBadge}
+                    ${rangeBadge ? `<div class="range-disclaimer">Clinical indicator only (no automated diagnosis)</div>` : ''}
+                </div>
+            `;
+        } else if (doc.diagnosis || doc.medicines) {
+            intelContent = `
+                <div class="doc-card-intel">
+                    ${doc.diagnosis ? `
+                        <div class="doc-intel-row">
+                            <span class="doc-intel-label">Diagnosis:</span>
+                            <span class="doc-intel-value" style="color: var(--danger);">${escapeHtml(doc.diagnosis)}</span>
+                        </div>
+                    ` : ''}
+                    ${doc.medicines ? `
+                        <div class="doc-intel-row">
+                            <span class="doc-intel-label">Medicines:</span>
+                            <span class="doc-intel-value" style="color: var(--accent-teal);">${escapeHtml(doc.medicines.length > 50 ? doc.medicines.slice(0, 48) + '...' : doc.medicines)}</span>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        } else if (doc.notes) {
+            intelContent = `
+                <div class="doc-card-intel">
+                    <div class="doc-intel-row">
+                        <span class="doc-intel-label">Notes:</span>
+                        <span class="doc-intel-value" style="color: var(--text-muted); font-style: italic;">${escapeHtml(doc.notes.length > 60 ? doc.notes.slice(0, 58) + '...' : doc.notes)}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        cardsHtml += `
+            <div class="document-card">
+                <div class="document-card-top">
+                    ${typeBadge}
+                    <span class="doc-card-date">${formatDate(doc.document_date)}</span>
+                </div>
+
+                <div class="doc-card-file-info">
+                    <div class="doc-file-icon">
+                        <i data-lucide="${(doc.file_type || '').includes('pdf') ? 'file-text' : (doc.file_type || '').startsWith('image/') ? 'image' : 'file'}"></i>
+                    </div>
+                    <div style="min-width: 0;">
+                        <div class="doc-card-title">${escapeHtml(doc.title || doc.file_name)}</div>
+                        <div class="doc-card-filename">${escapeHtml(doc.file_name)} &bull; ${Math.round((doc.file_size || 0) / 1024)} KB</div>
+                    </div>
+                </div>
+
+                ${intelContent}
+
+                <div class="doc-card-actions">
+                    <button type="button" class="btn btn-primary btn-sm" onclick="openViewDocumentModal(${doc.id})">
+                        <i data-lucide="file-search"></i> View Document
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+
+    listContainer.innerHTML = cardsHtml;
+
+    if (typeof lucide !== "undefined") {
+        lucide.createIcons();
+    }
+}
+
+function openUploadDocumentModal() {
+    if (!activePatient) {
+        showToast("Please search or select a patient before uploading a document.", "warning");
+        return;
+    }
+
+    const modal = document.getElementById("upload-document-modal");
+    if (!modal) return;
+
+    // Set Patient context in modal header
+    const patientNameEl = document.getElementById("upload-doc-patient-name");
+    const patientIdEl = document.getElementById("upload-doc-patient-id");
+    if (patientNameEl) patientNameEl.innerText = activePatient.name || "Unknown";
+    if (patientIdEl) patientIdEl.innerText = activePatient.id || "--";
+
+    // Reset form inputs
+    const form = document.getElementById("upload-document-form");
+    if (form) form.reset();
+
+    // Default document date to today
+    const dateInput = document.getElementById("doc-date-input");
+    if (dateInput) {
+        dateInput.value = new Date().toISOString().split('T')[0];
+    }
+
+    // Reset file selection state
+    clearSelectedDocumentFile();
+
+    // Reset range indicator
+    const indicator = document.getElementById("doc-verify-range-indicator");
+    if (indicator) indicator.style.display = "none";
+
+    // Setup drag and drop on dropzone
+    const dropzone = document.getElementById("doc-dropzone");
+    if (dropzone && !dropzone._listenersAdded) {
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropzone.classList.add('dragover');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropzone.classList.remove('dragover');
+            }, false);
+        });
+
+        dropzone.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            if (files && files.length > 0) {
+                const fileInput = document.getElementById('doc-file-input');
+                if (fileInput) {
+                    fileInput.files = files;
+                    handleDocumentFileSelected({ target: fileInput });
+                }
+            }
+        }, false);
+
+        dropzone._listenersAdded = true;
+    }
+
+    handleDocTypeChange();
+
+    modal.classList.add("modal-active");
+
+    if (typeof lucide !== "undefined") {
+        lucide.createIcons();
+    }
+}
+
+function closeUploadDocumentModal() {
+    const modal = document.getElementById("upload-document-modal");
+    if (modal) {
+        modal.classList.remove("modal-active");
+    }
+    clearSelectedDocumentFile();
+}
+
+function handleDocTypeChange() {
+    const typeSelect = document.getElementById("doc-type-select");
+    const labContainer = document.getElementById("doc-lab-fields-container");
+    const medicinesGroup = document.getElementById("doc-medicines-group");
+
+    if (!typeSelect) return;
+    const val = typeSelect.value;
+
+    if (val === "Lab Report") {
+        if (labContainer) labContainer.style.display = "block";
+    } else {
+        if (labContainer) labContainer.style.display = "none";
+    }
+
+    if (val === "Prescription" || val === "Discharge Summary") {
+        if (medicinesGroup) medicinesGroup.style.display = "block";
+    }
+
+    handleLabRangeLiveCheck();
+
+    if (typeof lucide !== "undefined") {
+        lucide.createIcons();
+    }
+}
+
+function handleDocumentFileSelected(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+        showToast("File size exceeds 10MB limit. Please choose a smaller file.", "danger");
+        event.target.value = "";
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function (e) {
+        selectedDocumentFile = {
+            file: file,
+            base64: e.target.result,
+            name: file.name,
+            size: file.size,
+            type: file.type || "application/octet-stream"
+        };
+
+        const nameEl = document.getElementById("preview-file-name");
+        const metaEl = document.getElementById("preview-file-meta");
+        const dropzone = document.getElementById("doc-dropzone");
+        const previewBar = document.getElementById("doc-file-preview-bar");
+
+        if (nameEl) nameEl.innerText = file.name;
+        if (metaEl) {
+            const sizeKb = Math.round(file.size / 1024);
+            const ext = file.name.split('.').pop().toUpperCase();
+            metaEl.innerText = `${sizeKb} KB • ${ext}`;
+        }
+
+        if (dropzone) dropzone.style.display = "none";
+        if (previewBar) previewBar.style.display = "flex";
+
+        // Auto-fill Title if blank
+        const titleInput = document.getElementById("doc-title-input");
+        if (titleInput && !titleInput.value) {
+            const cleanBase = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
+            titleInput.value = cleanBase;
+        }
+
+        // If it's a text file, read text and auto-extract!
+        if (file.type.startsWith("text/") || file.name.endsWith(".txt")) {
+            const textReader = new FileReader();
+            textReader.onload = function (te) {
+                const text = te.target.result;
+                const rawEl = document.getElementById("doc-raw-text");
+                if (rawEl) rawEl.value = text;
+                runDocumentTextExtraction();
+            };
+            textReader.readAsText(file);
+        }
+
+        if (typeof lucide !== "undefined") {
+            lucide.createIcons();
+        }
+    };
+
+    reader.readAsDataURL(file);
+}
+
+function clearSelectedDocumentFile(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    selectedDocumentFile = null;
+
+    const fileInput = document.getElementById("doc-file-input");
+    if (fileInput) fileInput.value = "";
+
+    const dropzone = document.getElementById("doc-dropzone");
+    const previewBar = document.getElementById("doc-file-preview-bar");
+
+    if (dropzone) dropzone.style.display = "block";
+    if (previewBar) previewBar.style.display = "none";
+}
+
+function evaluateLabRangeClient(valStr, rangeStr) {
+    if (!valStr || !rangeStr) return { status: "none" };
+
+    const valClean = String(valStr).trim();
+    const rangeClean = String(rangeStr).trim();
+
+    const valMatch = valClean.match(/[-+]?\d+(?:\.\d+)?/);
+    if (!valMatch) return { status: "none" };
+
+    const val = parseFloat(valMatch[0]);
+    if (isNaN(val)) return { status: "none" };
+
+    // Case 1: Min - Max
+    const rangeMatch = rangeClean.match(/(\d+(?:\.\d+)?)\s*(?:-|–|to)\s*(\d+(?:\.\d+)?)/i);
+    if (rangeMatch) {
+        const low = parseFloat(rangeMatch[1]);
+        const high = parseFloat(rangeMatch[2]);
+        if (!isNaN(low) && !isNaN(high)) {
+            if (val < low) return { status: "low", val, low, high, label: `Observed ${val} is below reference range (${low} - ${high})` };
+            if (val > high) return { status: "high", val, low, high, label: `Observed ${val} is above reference range (${low} - ${high})` };
+            return { status: "normal", val, low, high, label: `Observed ${val} is within normal reference range (${low} - ${high})` };
+        }
+    }
+
+    // Case 2: Upper limit (< 200, <= 200, under 200)
+    const maxMatch = rangeClean.match(/(?:<|<=|less\s+than|under)\s*(\d+(?:\.\d+)?)/i);
+    if (maxMatch) {
+        const maxVal = parseFloat(maxMatch[1]);
+        if (!isNaN(maxVal)) {
+            if (val > maxVal) return { status: "high", val, maxVal, label: `Observed ${val} exceeds reference limit (< ${maxVal})` };
+            return { status: "normal", val, maxVal, label: `Observed ${val} is within reference limit (< ${maxVal})` };
+        }
+    }
+
+    // Case 3: Lower limit (> 50, >= 50, over 50)
+    const minMatch = rangeClean.match(/(?:>|>=|greater\s+than|over)\s*(\d+(?:\.\d+)?)/i);
+    if (minMatch) {
+        const minVal = parseFloat(minMatch[1]);
+        if (!isNaN(minVal)) {
+            if (val < minVal) return { status: "low", val, minVal, label: `Observed ${val} is below reference limit (> ${minVal})` };
+            return { status: "normal", val, minVal, label: `Observed ${val} is within reference limit (> ${minVal})` };
+        }
+    }
+
+    return { status: "none" };
+}
+
+function handleLabRangeLiveCheck() {
+    const valInput = document.getElementById("doc-verify-inv-value");
+    const rangeInput = document.getElementById("doc-verify-ref-range");
+    const indicator = document.getElementById("doc-verify-range-indicator");
+    const content = document.getElementById("range-indicator-content");
+
+    if (!indicator || !content) return;
+
+    const valStr = valInput ? valInput.value : "";
+    const rangeStr = rangeInput ? rangeInput.value : "";
+
+    const res = evaluateLabRangeClient(valStr, rangeStr);
+
+    indicator.className = `range-indicator-preview ${res.status}`;
+
+    if (res.status === "high" || res.status === "low") {
+        indicator.style.display = "block";
+        content.innerHTML = `
+            <div style="font-weight: 700; display: flex; align-items: center; gap: 6px;">
+                <i data-lucide="alert-triangle" style="width: 16px; height: 16px;"></i>
+                ⚠️ Outside Reference Range (${res.status === "high" ? "High" : "Low"})
+            </div>
+            <div style="font-size: 0.78rem; margin-top: 2px;">
+                ${escapeHtml(res.label)}
+            </div>
+            <div class="range-disclaimer">
+                Reference indicator only. Clinical correlation advised (no automated diagnosis).
+            </div>
+        `;
+    } else if (res.status === "normal") {
+        indicator.style.display = "block";
+        content.innerHTML = `
+            <div style="font-weight: 700; display: flex; align-items: center; gap: 6px;">
+                <i data-lucide="check-circle" style="width: 16px; height: 16px;"></i>
+                ✅ Within Normal Reference Range
+            </div>
+            <div style="font-size: 0.78rem; margin-top: 2px;">
+                ${escapeHtml(res.label)}
+            </div>
+            <div class="range-disclaimer">
+                Clinical indicator only (no automated diagnosis).
+            </div>
+        `;
+    } else {
+        indicator.style.display = "none";
+        content.innerHTML = "";
+    }
+
+    if (typeof lucide !== "undefined") {
+        lucide.createIcons();
+    }
+}
+
+function handleReportTextInput() {
+    const ta = document.getElementById("doc-raw-text");
+    if (!ta) return;
+    // Reset height so shrinkage is measured correctly
+    ta.style.height = "auto";
+    const MIN_H = 120;
+    const MAX_H = 300;
+    const natural = ta.scrollHeight;
+    if (natural <= MIN_H) {
+        ta.style.height = MIN_H + "px";
+        ta.style.overflowY = "hidden";
+    } else if (natural <= MAX_H) {
+        ta.style.height = natural + "px";
+        ta.style.overflowY = "hidden";
+    } else {
+        ta.style.height = MAX_H + "px";
+        ta.style.overflowY = "auto";
+    }
+}
+
+function runDocumentTextExtraction() {
+    const rawEl = document.getElementById("doc-raw-text");
+    if (!rawEl) return;
+    const text = rawEl.value;
+    if (!text || !text.trim()) {
+        showToast("Please enter or paste report text to extract fields.", "warning");
+        return;
+    }
+
+    let extractedCount = 0;
+
+    // Diagnosis
+    const diagMatch = text.match(/(?:diagnosis|dx|impression|condition|finding)[:\s]+([^\n\r]+)/i);
+    if (diagMatch && diagMatch[1]) {
+        const diagInput = document.getElementById("doc-verify-diagnosis");
+        if (diagInput) {
+            diagInput.value = diagMatch[1].trim();
+            extractedCount++;
+        }
+    }
+
+    // Medicines
+    const medMatch = text.match(/(?:medicines|medication|rx|treatment|prescribed|drugs)[:\s]+([\s\S]*?)(?=(?:diagnosis|investigation|test|result|range|notes|remarks|\n\n|$))/i);
+    if (medMatch && medMatch[1]) {
+        const medInput = document.getElementById("doc-verify-medicines");
+        if (medInput) {
+            medInput.value = medMatch[1].trim();
+            extractedCount++;
+        }
+    }
+
+    // Investigation Name
+    const invMatch = text.match(/(?:investigation|test name|test|panel|parameter)[:\s]+([^\n\r]+)/i);
+    if (invMatch && invMatch[1]) {
+        const invInput = document.getElementById("doc-verify-inv-name");
+        if (invInput) {
+            invInput.value = invMatch[1].trim();
+            extractedCount++;
+            const typeSelect = document.getElementById("doc-type-select");
+            if (typeSelect && typeSelect.value !== "Lab Report") {
+                typeSelect.value = "Lab Report";
+                handleDocTypeChange();
+            }
+        }
+    }
+
+    // Result / Value
+    const valMatch = text.match(/(?:result|observed value|value|finding)[:\s]+([^\n\r]+)/i);
+    if (valMatch && valMatch[1]) {
+        const valInput = document.getElementById("doc-verify-inv-value");
+        if (valInput) {
+            valInput.value = valMatch[1].trim();
+            extractedCount++;
+        }
+    }
+
+    // Reference Range
+    const rangeMatch = text.match(/(?:reference range|ref range|normal range|biological reference|limits|interval)[:\s]+([^\n\r]+)/i);
+    if (rangeMatch && rangeMatch[1]) {
+        const rangeInput = document.getElementById("doc-verify-ref-range");
+        if (rangeInput) {
+            rangeInput.value = rangeMatch[1].trim();
+            extractedCount++;
+        }
+    }
+
+    // Notes
+    const notesMatch = text.match(/(?:notes|remarks|comments|advice|instructions)[:\s]+([^\n\r]+)/i);
+    if (notesMatch && notesMatch[1]) {
+        const notesInput = document.getElementById("doc-verify-notes");
+        if (notesInput) {
+            notesInput.value = notesMatch[1].trim();
+            extractedCount++;
+        }
+    }
+
+    handleLabRangeLiveCheck();
+
+    if (extractedCount > 0) {
+        showToast(`Identified ${extractedCount} clinical field(s). Please review and verify.`, "success");
+    } else {
+        showToast("No structured patterns recognized. You can enter details manually in the verification form.", "info");
+    }
+}
+
+async function handleSaveMedicalDocument(event) {
+    if (event) event.preventDefault();
+
+    if (!activePatient) {
+        showToast("Error: No active patient selected.", "danger");
+        return;
+    }
+
+    if (!selectedDocumentFile || !selectedDocumentFile.base64) {
+        showToast("Please attach a medical document file (PDF, image, or text).", "warning");
+        return;
+    }
+
+    const typeSelect = document.getElementById("doc-type-select");
+    const dateInput = document.getElementById("doc-date-input");
+    const titleInput = document.getElementById("doc-title-input");
+    const diagInput = document.getElementById("doc-verify-diagnosis");
+    const medInput = document.getElementById("doc-verify-medicines");
+    const invNameInput = document.getElementById("doc-verify-inv-name");
+    const invValInput = document.getElementById("doc-verify-inv-value");
+    const refRangeInput = document.getElementById("doc-verify-ref-range");
+    const notesInput = document.getElementById("doc-verify-notes");
+    const submitBtn = document.getElementById("btn-save-doc-submit");
+
+    const docType = typeSelect ? typeSelect.value : "Other";
+    const docDate = dateInput ? dateInput.value : new Date().toISOString().split('T')[0];
+
+    if (!docDate) {
+        showToast("Please provide a valid document date.", "warning");
+        return;
+    }
+
+    const payload = {
+        document_type: docType,
+        document_date: docDate,
+        title: titleInput && titleInput.value.trim() ? titleInput.value.trim() : selectedDocumentFile.name,
+        file_name: selectedDocumentFile.name,
+        file_data: selectedDocumentFile.base64,
+        file_type: selectedDocumentFile.type,
+        diagnosis: diagInput ? diagInput.value.trim() : "",
+        medicines: medInput ? medInput.value.trim() : "",
+        investigation_name: invNameInput ? invNameInput.value.trim() : "",
+        investigation_value: invValInput ? invValInput.value.trim() : "",
+        reference_range: refRangeInput ? refRangeInput.value.trim() : "",
+        notes: notesInput ? notesInput.value.trim() : ""
+    };
+
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = `Saving Document...`;
+    }
+
+    try {
+        await apiUploadMedicalDocument(activePatient.id, payload);
+
+        showToast("Medical document saved successfully!", "success");
+        closeUploadDocumentModal();
+
+        // Refresh patient case history to reload documents & timeline
+        await renderCaseHistory();
+    } catch (err) {
+        showToast(`Failed to save document: ${err.message}`, "danger");
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = `<i data-lucide="check"></i> Save Medical Document`;
+            if (typeof lucide !== "undefined") {
+                lucide.createIcons();
+            }
+        }
+    }
+}
+
+function openViewDocumentModal(documentId) {
+    const doc = loadedDocuments.find(d => Number(d.id) === Number(documentId));
+    if (!doc) {
+        showToast("Document details not found.", "warning");
+        return;
+    }
+
+    const modal = document.getElementById("view-document-modal");
+    if (!modal) return;
+
+    const titleEl = document.getElementById("view-doc-modal-title");
+    const metaEl = document.getElementById("view-doc-modal-meta");
+    const statusBadge = document.getElementById("view-doc-status-badge");
+    const fileFrame = document.getElementById("view-doc-file-frame");
+    const openExtLink = document.getElementById("view-doc-open-external");
+    const downloadBtn = document.getElementById("view-doc-download-btn");
+    const intelContainer = document.getElementById("view-doc-intelligence-content");
+
+    const fileUrl = apiGetDocumentFileUrl(doc.id);
+
+    if (titleEl) titleEl.innerText = doc.title || doc.document_type || "Medical Document";
+    if (metaEl) metaEl.innerText = `${formatDate(doc.document_date)} • Patient ID: ${doc.patient_id} • File: ${doc.file_name}`;
+
+    if (statusBadge) {
+        statusBadge.className = `doc-type-badge doc-type-${(doc.document_type || 'other').toLowerCase().replace(/\s+/g, '-')}`;
+        statusBadge.innerText = doc.document_type || "Medical Document";
+    }
+
+    if (openExtLink) openExtLink.href = fileUrl;
+    if (downloadBtn) {
+        downloadBtn.href = fileUrl;
+        downloadBtn.download = doc.file_name;
+    }
+
+    // Render file preview in left pane
+    if (fileFrame) {
+        const mime = (doc.file_type || "").toLowerCase();
+        const fname = (doc.file_name || "").toLowerCase();
+
+        if (mime.includes("pdf") || fname.endsWith(".pdf")) {
+            fileFrame.innerHTML = `
+                <iframe src="${fileUrl}" title="${escapeHtml(doc.file_name)}"></iframe>
+            `;
+        } else if (mime.startsWith("image/") || fname.match(/\.(png|jpg|jpeg|webp|gif|svg)$/)) {
+            fileFrame.innerHTML = `
+                <img src="${fileUrl}" alt="${escapeHtml(doc.file_name)}" />
+            `;
+        } else {
+            fileFrame.innerHTML = `
+                <div style="text-align: center; padding: 24px; color: var(--text-muted);">
+                    <i data-lucide="file-text" style="width: 48px; height: 48px; margin-bottom: 12px; color: var(--accent-blue);"></i>
+                    <p style="font-weight: 600; color: var(--text-main); margin-bottom: 6px;">${escapeHtml(doc.file_name)}</p>
+                    <p style="font-size: 0.8rem; margin-bottom: 14px;">Direct preview not embedded for this format.</p>
+                    <a href="${fileUrl}" target="_blank" class="btn btn-outline btn-sm">
+                        <i data-lucide="external-link"></i> Open / Download File
+                    </a>
+                </div>
+            `;
+        }
+    }
+
+    // Render verified clinical intelligence in right pane
+    if (intelContainer) {
+        let intelHtml = `
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div class="detail-block" style="background: var(--bg-body); padding: 8px 12px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color);">
+                    <span style="font-size: 0.7rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block;">Document Type</span>
+                    <div style="font-weight: 700; color: var(--accent-blue); font-size: 0.88rem;">${escapeHtml(doc.document_type)}</div>
+                </div>
+                <div class="detail-block" style="background: var(--bg-body); padding: 8px 12px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color);">
+                    <span style="font-size: 0.7rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block;">Document Date</span>
+                    <div style="font-weight: 600; color: var(--text-main); font-size: 0.88rem;">${escapeHtml(doc.document_date)}</div>
+                </div>
+            </div>
+        `;
+
+        if (doc.document_type === "Lab Report" || doc.investigation_name || doc.investigation_value) {
+            const rangeClass = (doc.range_status || "none").toLowerCase();
+            let rangeBadge = "";
+            if (rangeClass === "high") {
+                rangeBadge = `<span class="range-badge high"><i data-lucide="alert-triangle"></i> Above Reference Range (High)</span>`;
+            } else if (rangeClass === "low") {
+                rangeBadge = `<span class="range-badge low"><i data-lucide="alert-triangle"></i> Below Reference Range (Low)</span>`;
+            } else if (rangeClass === "normal") {
+                rangeBadge = `<span class="range-badge normal"><i data-lucide="check-circle"></i> Within Reference Range</span>`;
+            } else if (rangeClass === "out_of_range") {
+                rangeBadge = `<span class="range-badge out_of_range"><i data-lucide="alert-triangle"></i> Outside Reference Range</span>`;
+            }
+
+            intelHtml += `
+                <div class="detail-block" style="background: var(--bg-body); padding: 10px 12px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color);">
+                    <span style="font-size: 0.7rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 2px;">Investigation / Lab Test</span>
+                    <div style="font-weight: 700; color: var(--accent-teal); font-size: 0.95rem;">${escapeHtml(doc.investigation_name || doc.title || 'Laboratory Report')}</div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <div class="detail-block" style="background: var(--bg-body); padding: 10px 12px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color);">
+                        <span style="font-size: 0.7rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 2px;">Observed Value</span>
+                        <div style="font-weight: 700; color: var(--text-main); font-size: 0.95rem;">${escapeHtml(doc.investigation_value || 'Not specified')}</div>
+                        ${rangeBadge}
+                    </div>
+                    <div class="detail-block" style="background: var(--bg-body); padding: 10px 12px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color);">
+                        <span style="font-size: 0.7rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 2px;">Reference Range</span>
+                        <div style="color: var(--text-muted); font-weight: 600; font-size: 0.88rem;">${escapeHtml(doc.reference_range || 'Not specified')}</div>
+                        <div class="range-disclaimer">Reference indicator only (no automated diagnosis)</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        if (doc.diagnosis) {
+            intelHtml += `
+                <div class="detail-block" style="background: var(--bg-body); padding: 10px 12px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color);">
+                    <span style="font-size: 0.7rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 2px;">Clinical Diagnosis</span>
+                    <div style="color: var(--danger); font-weight: 600; font-size: 0.88rem;">${escapeHtml(doc.diagnosis)}</div>
+                </div>
+            `;
+        }
+
+        if (doc.medicines) {
+            intelHtml += `
+                <div class="detail-block" style="background: var(--bg-body); padding: 10px 12px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color);">
+                    <span style="font-size: 0.7rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 2px;">Prescribed Medicines & Regimen</span>
+                    <div style="color: var(--accent-teal); font-weight: 600; font-size: 0.88rem; white-space: pre-wrap;">${escapeHtml(doc.medicines)}</div>
+                </div>
+            `;
+        }
+
+        if (doc.notes) {
+            intelHtml += `
+                <div class="detail-block" style="background: var(--bg-body); padding: 10px 12px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color);">
+                    <span style="font-size: 0.7rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 2px;">Clinical Notes / Remarks</span>
+                    <div style="color: var(--text-muted); font-size: 0.82rem; font-style: italic;">${escapeHtml(doc.notes)}</div>
+                </div>
+            `;
+        }
+
+        intelContainer.innerHTML = intelHtml;
+    }
+
+    modal.classList.add("modal-active");
+
+    if (typeof lucide !== "undefined") {
+        lucide.createIcons();
+    }
+}
+
+function closeViewDocumentModal() {
+    const modal = document.getElementById("view-document-modal");
+    if (modal) {
+        modal.classList.remove("modal-active");
+    }
+    const fileFrame = document.getElementById("view-doc-file-frame");
+    if (fileFrame) {
+        fileFrame.innerHTML = "";
+    }
+}
+
 
