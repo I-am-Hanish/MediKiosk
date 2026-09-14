@@ -14,6 +14,20 @@ let html5QrCode = null;
 let isScanning = false;
 
 // ============================================================
+// ROLE GUARD HELPERS
+// ============================================================
+
+/**
+ * Returns true when the authenticated user is a PATIENT.
+ * Used to enforce the read-only UI restriction for patients:
+ * they can VIEW all their medical data but cannot create,
+ * edit, or upload any clinical records.
+ */
+function isPatientRole() {
+    return typeof getAuthRole === "function" && getAuthRole() === "PATIENT";
+}
+
+// ============================================================
 // GLOBAL HELPER — used by openViewConsultation and inline code
 // ============================================================
 
@@ -179,6 +193,13 @@ function switchScreen(screenId) {
         if (errBanner)   errBanner.style.display = "none";
     }
 
+    // ── Login screen: reset login forms when unauthenticated ─────
+    if (screenId === "screen-login" && typeof isAuthenticated === "function" && !isAuthenticated()) {
+        if (typeof resetLoginForm === "function") {
+            resetLoginForm();
+        }
+    }
+
     document.querySelectorAll(".screen").forEach(screen => {
 
         screen.classList.remove("active-screen");
@@ -283,7 +304,8 @@ function enablePatientNavigation() {
         historyNav.classList.remove("disabled");
     }
 
-    if (consultationNav) {
+    // Patients cannot navigate to Add Consultation — keep it disabled/hidden for them
+    if (consultationNav && !isPatientRole()) {
         consultationNav.classList.remove("disabled");
     }
 }
@@ -1465,6 +1487,10 @@ async function renderCaseHistory() {
         if (
             loadedConsultations.length === 0
         ) {
+            // Show a neutral empty state for patients (no "Add Consultation" prompt)
+            const emptyMsg = isPatientRole()
+                ? "No consultation records found in your medical history."
+                : 'Click "+ Add New Consultation" to begin recording history.';
 
             timelineContainer.innerHTML = `
                 <div class="empty-timeline">
@@ -1475,7 +1501,7 @@ async function renderCaseHistory() {
                     </p>
 
                     <p style="font-size:0.85rem;margin-top:4px;">
-                        Click "+ Add New Consultation" to begin recording history.
+                        ${escapeHtml(emptyMsg)}
                     </p>
                 </div>
             `;
@@ -2806,6 +2832,16 @@ function renderPatientDocuments(documents = []) {
     }
 
     if (!documents || documents.length === 0) {
+        // For PATIENT role: omit the upload button from the empty state
+        const uploadBtnHtml = isPatientRole() ? "" : `
+            <button type="button" class="btn btn-outline btn-sm" onclick="openUploadDocumentModal()">
+                <i data-lucide="upload-cloud"></i> Upload Medical Document
+            </button>`;
+
+        const emptyDesc = isPatientRole()
+            ? "No medical documents are currently attached to your patient profile."
+            : "Upload lab reports, prescriptions, or discharge summaries to store against this patient profile.";
+
         listContainer.innerHTML = `
             <div class="empty-documents">
                 <i data-lucide="folder-open"></i>
@@ -2813,11 +2849,9 @@ function renderPatientDocuments(documents = []) {
                     No medical documents uploaded yet
                 </div>
                 <div style="font-size: 0.8rem; margin-bottom: 14px; max-width: 320px;">
-                    Upload lab reports, prescriptions, or discharge summaries to store against this patient profile.
+                    ${emptyDesc}
                 </div>
-                <button type="button" class="btn btn-outline btn-sm" onclick="openUploadDocumentModal()">
-                    <i data-lucide="upload-cloud"></i> Upload Medical Document
-                </button>
+                ${uploadBtnHtml}
             </div>
         `;
         if (typeof lucide !== "undefined") {
@@ -3597,6 +3631,62 @@ function hideLoginError() {
     if (banner) banner.style.display = "none";
 }
 
+// ── Reset login forms & credentials ───────────────────────
+
+/**
+ * Resets both Patient and Doctor login forms and fields completely:
+ * - Calls form.reset() on both #patient-login-form and #doctor-login-form
+ * - Wipes value and defaultValue on all login credential inputs
+ * - Restores password input types to "password"
+ * - Restores password toggle buttons to the default eye icon
+ * - Hides any active login error banner
+ */
+function resetLoginForm() {
+    // 1. Reset HTML form elements
+    const patientForm = document.getElementById("patient-login-form");
+    if (patientForm && typeof patientForm.reset === "function") {
+        patientForm.reset();
+    }
+    const doctorForm = document.getElementById("doctor-login-form");
+    if (doctorForm && typeof doctorForm.reset === "function") {
+        doctorForm.reset();
+    }
+
+    // 2. Explicitly wipe input values and defaultValues for all login fields
+    const loginFieldIds = [
+        "login-patient-id",
+        "login-patient-password",
+        "login-doctor-id",
+        "login-doctor-password"
+    ];
+    loginFieldIds.forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.value = "";
+            el.defaultValue = "";
+        }
+    });
+
+    // 3. Reset password field types back to "password"
+    ["login-patient-password", "login-doctor-password"].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.type = "password";
+        }
+    });
+
+    // 4. Reset toggle password visibility buttons back to "eye" icon
+    document.querySelectorAll(".btn-toggle-pass").forEach(function (btn) {
+        btn.innerHTML = "<i data-lucide='eye' style='width:18px;height:18px;'></i>";
+    });
+    if (typeof lucide !== "undefined") {
+        lucide.createIcons();
+    }
+
+    // 5. Hide error banner
+    hideLoginError();
+}
+
 // ── Patient login ─────────────────────────────────────────
 
 async function handlePatientLogin(event) {
@@ -3632,6 +3722,8 @@ async function handlePatientLogin(event) {
         // Session is stored by apiLogin → setAuthSession
         updateSidebarForRole("PATIENT");
         updateAuthUserBar();
+
+        resetLoginForm();
 
         const pid = data.patient_id || patientId;
         try {
@@ -3693,6 +3785,8 @@ async function handleDoctorLogin(event) {
 
         updateSidebarForRole("DOCTOR");
         updateAuthUserBar();
+
+        resetLoginForm();
 
         showToast("Welcome, Doctor! Access granted.", "success");
         switchScreen("screen-dashboard");
@@ -3780,6 +3874,8 @@ async function handleDoctorRegistration(event) {
 // ── Logout ────────────────────────────────────────────────
 
 function handleLogout() {
+    const prevRole = typeof getAuthRole === "function" ? getAuthRole() : null;
+
     if (typeof clearAuthSession === "function") clearAuthSession();
     sessionStorage.removeItem("activePatientId");
     sessionStorage.removeItem("currentScreen");
@@ -3791,13 +3887,25 @@ function handleLogout() {
     disablePatientNavigation();
     updateSidebarForRole(null);
 
+    // ── Security: reset both login forms and clear all credential fields ──
+    resetLoginForm();
+
     // Reset user bar
     const bar = document.getElementById("auth-user-bar");
     if (bar) bar.style.display = "none";
 
     showToast("You have been signed out.", "success");
-    switchLoginRole("PATIENT");
+
+    // Return to the login screen with the role tab matching the logged-out role
+    if (prevRole === "DOCTOR") {
+        switchLoginRole("DOCTOR");
+    } else {
+        switchLoginRole("PATIENT");
+    }
     switchScreen("screen-login");
+
+    // Ensure all fields and forms are completely blank on the login screen
+    resetLoginForm();
 }
 
 // ── Password show/hide toggle ─────────────────────────────
@@ -3827,18 +3935,24 @@ function updateSidebarForRole(role) {
     const navConsultation = document.getElementById("nav-consultation");
     const navLogout       = document.getElementById("nav-logout");
 
-    // Helper — show/hide sidebar items
+    // Static write-action buttons on the Case History screen
+    const btnCreatePrescription = document.getElementById("btn-create-prescription");
+    const btnUploadDocument     = document.getElementById("btn-upload-document");
+
+    // Helper — show/hide elements
     const show = (el) => { if (el) el.style.display = ""; };
     const hide = (el) => { if (el) el.style.display = "none"; };
 
     if (!role) {
-        // Unauthenticated — show only Sign In
+        // Unauthenticated — show only Sign In, hide all write controls
         show(navLogin);
         hide(navDashboard);
         hide(navRegistration);
         hide(navHistory);
         hide(navConsultation);
         hide(navLogout);
+        hide(btnCreatePrescription);
+        hide(btnUploadDocument);
         return;
     }
 
@@ -3847,16 +3961,23 @@ function updateSidebarForRole(role) {
     show(navLogout);
 
     if (role === "DOCTOR") {
+        // Full clinical access for doctors
         show(navDashboard);
         show(navRegistration);
         show(navHistory);
         show(navConsultation);
+        show(btnCreatePrescription);
+        show(btnUploadDocument);
     } else if (role === "PATIENT") {
-        // Patients only see their own case history
+        // ── Read-only patient interface ──────────────────────────
+        // Patients see their own case history only.
+        // All write / clinical-creation controls are hidden.
         hide(navDashboard);
         hide(navRegistration);
         show(navHistory);
-        hide(navConsultation);    // Patients cannot add consultations
+        hide(navConsultation);        // Cannot add consultations
+        hide(btnCreatePrescription);  // Cannot create prescriptions
+        hide(btnUploadDocument);      // Cannot upload documents
     }
 }
 

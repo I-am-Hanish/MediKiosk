@@ -217,12 +217,12 @@
                     </div>
 
                     <!-- Patient Login Form -->
-                    <form id="patient-login-form" onsubmit="event.preventDefault(); handlePatientLogin(event);">
+                    <form id="patient-login-form" autocomplete="off" onsubmit="event.preventDefault(); handlePatientLogin(event);">
                         <div class="form-group" style="margin-bottom: 16px;">
                             <label for="login-patient-id">
                                 Patient ID <span style="color: var(--danger);">*</span>
                             </label>
-                            <input type="text" id="login-patient-id" placeholder="e.g. MK-2026-1001" required style="text-transform: uppercase;">
+                            <input type="text" id="login-patient-id" placeholder="e.g. MK-2026-1001" required style="text-transform: uppercase;" autocomplete="off">
                         </div>
 
                         <div class="form-group" style="margin-bottom: 22px;">
@@ -230,7 +230,7 @@
                                 Password <span style="color: var(--danger);">*</span>
                             </label>
                             <div style="position: relative; display: flex; align-items: center;">
-                                <input type="password" id="login-patient-password" placeholder="Enter your password" required style="padding-right: 42px; width: 100%;">
+                                <input type="password" id="login-patient-password" placeholder="Enter your password" required style="padding-right: 42px; width: 100%;" autocomplete="off">
                                 <button type="button" class="btn-toggle-pass" onclick="togglePasswordVisibility('login-patient-password', this)" title="Show / Hide Password">
                                     <i data-lucide="eye" style="width: 18px; height: 18px;"></i>
                                 </button>
@@ -248,12 +248,12 @@
                     </form>
 
                     <!-- Doctor Login Form -->
-                    <form id="doctor-login-form" style="display: none;" onsubmit="event.preventDefault(); handleDoctorLogin(event);">
+                    <form id="doctor-login-form" style="display: none;" autocomplete="off" onsubmit="event.preventDefault(); handleDoctorLogin(event);">
                         <div class="form-group" style="margin-bottom: 16px;">
                             <label for="login-doctor-id">
                                 Doctor ID <span style="color: var(--danger);">*</span>
                             </label>
-                            <input type="text" id="login-doctor-id" placeholder="e.g. DOC-101" required style="text-transform: uppercase;">
+                            <input type="text" id="login-doctor-id" placeholder="e.g. DOC-101" required style="text-transform: uppercase;" autocomplete="off">
                         </div>
 
                         <div class="form-group" style="margin-bottom: 22px;">
@@ -261,7 +261,7 @@
                                 Password <span style="color: var(--danger);">*</span>
                             </label>
                             <div style="position: relative; display: flex; align-items: center;">
-                                <input type="password" id="login-doctor-password" placeholder="Enter your password" required style="padding-right: 42px; width: 100%;">
+                                <input type="password" id="login-doctor-password" placeholder="Enter your password" required style="padding-right: 42px; width: 100%;" autocomplete="off">
                                 <button type="button" class="btn-toggle-pass" onclick="togglePasswordVisibility('login-doctor-password', this)" title="Show / Hide Password">
                                     <i data-lucide="eye" style="width: 18px; height: 18px;"></i>
                                 </button>
