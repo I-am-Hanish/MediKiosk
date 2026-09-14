@@ -1,5 +1,5 @@
 // MediKiosk API Client Module
-// Handlers for interacting with the live FastAPI backend database
+// Handlers for interacting with the live FastAPI backend database & authentication
 
 /**
  * Automatically detects whether MediKiosk is running locally (FastAPI server / Live Server)
@@ -42,6 +42,157 @@ function parseApiError(errData, statusText, fallback) {
     return statusText || fallback;
 }
 
+// ============================================================
+// AUTHENTICATION STATE & SESSION STORAGE HELPERS
+// ============================================================
+
+function getAuthToken() {
+    return sessionStorage.getItem("authToken");
+}
+
+function getAuthRole() {
+    return sessionStorage.getItem("authRole");
+}
+
+function getAuthPatientId() {
+    return sessionStorage.getItem("authPatientId");
+}
+
+function getAuthDoctorId() {
+    return sessionStorage.getItem("authDoctorId");
+}
+
+function getAuthUsername() {
+    return sessionStorage.getItem("authUsername");
+}
+
+function isAuthenticated() {
+    return !!getAuthToken();
+}
+
+function setAuthSession(data) {
+    if (!data) return;
+    if (data.token) sessionStorage.setItem("authToken", data.token);
+    if (data.role) sessionStorage.setItem("authRole", String(data.role).toUpperCase());
+    if (data.user_identifier) sessionStorage.setItem("authUsername", data.user_identifier);
+    if (data.patient_id) {
+        sessionStorage.setItem("authPatientId", data.patient_id);
+        sessionStorage.setItem("activePatientId", data.patient_id);
+    }
+    if (data.doctor_id) sessionStorage.setItem("authDoctorId", data.doctor_id);
+}
+
+function clearAuthSession() {
+    sessionStorage.removeItem("authToken");
+    sessionStorage.removeItem("authRole");
+    sessionStorage.removeItem("authPatientId");
+    sessionStorage.removeItem("authDoctorId");
+    sessionStorage.removeItem("authUsername");
+}
+
+function getAuthHeaders(customHeaders = {}) {
+    const headers = {
+        'Content-Type': 'application/json',
+        ...customHeaders
+    };
+    const token = getAuthToken();
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
+}
+
+// ============================================================
+// AUTHENTICATION ENDPOINTS
+// ============================================================
+
+/**
+ * Logs in a user (Patient or Doctor).
+ * @param {string} identifier - Patient ID (e.g. MK-2026-1001) or Doctor ID (e.g. DOC-101)
+ * @param {string} password - Account password
+ * @returns {Promise<Object>} TokenResponse with token, role, and identifier
+ */
+async function apiLogin(identifier, password) {
+    const cleanId = String(identifier || '').trim().toUpperCase();
+    const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            identifier: cleanId,
+            password: String(password || '')
+        })
+    });
+
+    if (!response.ok) {
+        let errorMsg = "Login failed. Please check your credentials.";
+        try {
+            const err = await response.json();
+            errorMsg = parseApiError(err, response.statusText, errorMsg);
+        } catch (_) {
+            errorMsg = response.statusText || errorMsg;
+        }
+        throw new Error(errorMsg);
+    }
+
+    const data = await response.json();
+    setAuthSession(data);
+    return data;
+}
+
+/**
+ * Registers a new Doctor identity in the backend.
+ * @param {Object} doctorData - { doctor_id, password, name, specialization, hospital_name }
+ * @returns {Promise<Object>} Confirmation response
+ */
+async function apiRegisterDoctor(doctorData) {
+    const response = await fetch(`${API_BASE_URL}/api/auth/doctor/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(doctorData)
+    });
+
+    if (!response.ok) {
+        let errorMsg = "Doctor registration failed.";
+        try {
+            const err = await response.json();
+            errorMsg = parseApiError(err, response.statusText, errorMsg);
+        } catch (_) {
+            errorMsg = response.statusText || errorMsg;
+        }
+        throw new Error(errorMsg);
+    }
+
+    return await response.json();
+}
+
+/**
+ * Retrieves profile of current active user via Bearer token.
+ * @returns {Promise<Object|null>}
+ */
+async function apiGetCurrentUser() {
+    const token = getAuthToken();
+    if (!token) return null;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
+            headers: getAuthHeaders()
+        });
+
+        if (!response.ok) {
+            clearAuthSession();
+            return null;
+        }
+
+        return await response.json();
+    } catch (_) {
+        return null;
+    }
+}
+
+// ============================================================
+// PATIENT MEDICAL ENDPOINTS
+// ============================================================
+
 /**
  * Returns the URL for the local backend QR endpoint.
  */
@@ -51,16 +202,14 @@ function apiGetPatientQrUrl(patientId) {
 }
 
 /**
- * Registers a new patient with details entered by the user.
- * @param {Object} patientData - { name, age, gender, phone, email, allergies, conditions }
+ * Registers a new patient with demographic and optional password details.
+ * @param {Object} patientData - { name, age, gender, phone, email, allergies, conditions, password }
  * @returns {Promise<Object>} The registered patient response
  */
 async function apiRegisterPatient(patientData) {
     const response = await fetch(`${API_BASE_URL}/api/patient/register`, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
+        headers: getAuthHeaders(),
         body: JSON.stringify(patientData)
     });
 
@@ -85,7 +234,8 @@ async function apiRegisterPatient(patientData) {
  */
 async function apiSearchPatient(patientId) {
     const response = await fetch(
-        `${API_BASE_URL}/api/patient/search?id=${encodeURIComponent(patientId)}`
+        `${API_BASE_URL}/api/patient/search?id=${encodeURIComponent(patientId)}`,
+        { headers: getAuthHeaders() }
     );
 
     if (!response.ok) {
@@ -109,7 +259,8 @@ async function apiSearchPatient(patientId) {
  */
 async function apiGetPatientHistory(patientId) {
     const response = await fetch(
-        `${API_BASE_URL}/api/patient/${encodeURIComponent(patientId)}/history`
+        `${API_BASE_URL}/api/patient/${encodeURIComponent(patientId)}/history`,
+        { headers: getAuthHeaders() }
     );
 
     if (!response.ok) {
@@ -136,9 +287,7 @@ async function apiAddConsultation(consultationData) {
         `${API_BASE_URL}/api/patient/consultation`,
         {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: getAuthHeaders(),
             body: JSON.stringify(consultationData)
         }
     );
@@ -159,18 +308,13 @@ async function apiAddConsultation(consultationData) {
 
 /**
  * Updates an existing clinical consultation record (Disabled: Prescriptions are immutable).
- * @param {number|string} consultationId - The consultation primary key ID
- * @param {Object} consultationData - { date, doctor_name, specialization, hospital_name, symptoms, diagnosis, treatment, notes }
- * @returns {Promise<Object>} The response
  */
 async function apiUpdateConsultation(consultationId, consultationData) {
     const response = await fetch(
         `${API_BASE_URL}/api/patient/consultation/${encodeURIComponent(consultationId)}`,
         {
             method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: getAuthHeaders(),
             body: JSON.stringify(consultationData)
         }
     );
@@ -193,9 +337,6 @@ async function apiUpdateConsultation(consultationId, consultationData) {
 
 /**
  * Uploads a medical document with verified clinical intelligence for the given patient ID.
- * @param {string} patientId - The patient ID
- * @param {Object} documentData - { document_type, document_date, title, file_name, file_data, file_type, diagnosis, medicines, investigation_name, investigation_value, reference_range, range_status, notes }
- * @returns {Promise<Object>} The uploaded document response
  */
 async function apiUploadMedicalDocument(patientId, documentData) {
     const cleanId = encodeURIComponent(String(patientId || '').trim().toUpperCase());
@@ -203,9 +344,7 @@ async function apiUploadMedicalDocument(patientId, documentData) {
         `${API_BASE_URL}/api/patient/${cleanId}/document`,
         {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: getAuthHeaders(),
             body: JSON.stringify(documentData)
         }
     );
@@ -226,13 +365,12 @@ async function apiUploadMedicalDocument(patientId, documentData) {
 
 /**
  * Retrieves all medical documents attached to the given patient ID.
- * @param {string} patientId - The patient ID
- * @returns {Promise<Object>} { patient_id, documents }
  */
 async function apiGetPatientDocuments(patientId) {
     const cleanId = encodeURIComponent(String(patientId || '').trim().toUpperCase());
     const response = await fetch(
-        `${API_BASE_URL}/api/patient/${cleanId}/documents`
+        `${API_BASE_URL}/api/patient/${cleanId}/documents`,
+        { headers: getAuthHeaders() }
     );
 
     if (!response.ok) {
@@ -251,9 +389,10 @@ async function apiGetPatientDocuments(patientId) {
 
 /**
  * Generates the direct URL for streaming/viewing the original medical document file.
- * @param {number|string} documentId - The document primary key ID
- * @returns {string} The direct file stream URL
+ * Appends the active session token so direct browser iframes and links remain authorized.
  */
 function apiGetDocumentFileUrl(documentId) {
-    return `${API_BASE_URL}/api/patient/document/${encodeURIComponent(documentId)}/file`;
-}
+    const token = getAuthToken();
+    const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
+    return `${API_BASE_URL}/api/patient/document/${encodeURIComponent(documentId)}/file${tokenParam}`;
+}

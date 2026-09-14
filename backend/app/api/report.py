@@ -19,6 +19,7 @@ from sqlalchemy.future import select
 from app.database import get_db
 from app.database.models import Patient, Consultation
 from app.services.email_service import send_report_email
+from app.core.dependencies import require_patient_access, AuthenticatedUser
 
 router = APIRouter()
 
@@ -415,6 +416,7 @@ def _esc(value) -> str:
 async def patient_report(
     patient_id: str,
     background_tasks: BackgroundTasks,
+    current_user: AuthenticatedUser = Depends(require_patient_access),
     db: AsyncSession = Depends(get_db),
 ):
     """

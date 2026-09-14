@@ -19,6 +19,8 @@ class Patient(Base):
 
     consultations = relationship("Consultation", back_populates="patient", cascade="all, delete-orphan")
     documents = relationship("MedicalDocument", back_populates="patient", cascade="all, delete-orphan")
+    user_account = relationship("User", back_populates="patient", uselist=False, cascade="all, delete-orphan")
+
 
 class Consultation(Base):
     __tablename__ = "consultations"
@@ -60,4 +62,31 @@ class MedicalDocument(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     patient = relationship("Patient", back_populates="documents")
+ 
+
+class Doctor(Base):
+    __tablename__ = "doctors"
+
+    id = Column(String, primary_key=True, index=True)  # Doctor ID (e.g. DOC-101)
+    name = Column(String, nullable=True)
+    specialization = Column(String, nullable=True, default="General Practice")
+    hospital_name = Column(String, nullable=True, default="MediKiosk Clinic")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user_account = relationship("User", back_populates="doctor", uselist=False, cascade="all, delete-orphan")
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    username = Column(String, unique=True, index=True, nullable=False)  # Patient ID or Doctor ID
+    password_hash = Column(String, nullable=False)
+    role = Column(String, nullable=False)  # "PATIENT" or "DOCTOR"
+    patient_id = Column(String, ForeignKey("patients.id"), nullable=True, index=True)
+    doctor_id = Column(String, ForeignKey("doctors.id"), nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    patient = relationship("Patient", back_populates="user_account")
+    doctor = relationship("Doctor", back_populates="user_account")
 

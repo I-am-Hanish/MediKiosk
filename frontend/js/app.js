@@ -29,6 +29,16 @@ function setText(id, value) {
 // ============================================================
 
 const SCREEN_TITLES = {
+    "screen-login": {
+        title: "Secure Healthcare Access",
+        desc: "Sign in to your MediKiosk account"
+    },
+
+    "screen-doctor-register": {
+        title: "Doctor Account Registration",
+        desc: "Create a new doctor account to access clinical features"
+    },
+
     "screen-registration": {
         title: "Patient Registration",
         desc: "Register a new patient and generate their digital health card"
@@ -60,43 +70,79 @@ document.addEventListener("DOMContentLoaded", async () => {
         lucide.createIcons();
     }
 
-    const storedPatientId =
-        sessionStorage.getItem("activePatientId");
+    // ── Auth-gated startup ──────────────────────────────────────
+    // If there is no valid auth token in session, send the user to
+    // the login screen immediately regardless of any saved state.
+    const token = typeof getAuthToken === "function" ? getAuthToken() : null;
+    const role  = typeof getAuthRole  === "function" ? getAuthRole()  : null;
 
-    const storedScreen =
-        sessionStorage.getItem("currentScreen") ||
-        "screen-registration";
-
-    if (storedPatientId) {
-        try {
-            if (storedScreen === "screen-history") {
-                const data = await apiGetPatientHistory(storedPatientId);
-                activePatient = data.patient;
-                loadedConsultations = data.consultations || [];
-                enablePatientNavigation();
-                populateDashboardCard(activePatient);
-                switchScreen("screen-history");
-                await renderCaseHistory();
-            } else {
-                const patient = await apiSearchPatient(storedPatientId);
-                activePatient = patient;
-                enablePatientNavigation();
-                populateDashboardCard(patient);
-                switchScreen(storedScreen);
-                if (storedScreen === "screen-consultation") {
-                    prepareConsultationForm();
-                }
-            }
-            return;
-        } catch (error) {
-            console.warn("Could not restore patient session:", error);
-            sessionStorage.removeItem("activePatientId");
-            activePatient = null;
-        }
+    if (!token) {
+        // No session — always land on the login screen
+        switchScreen("screen-login");
+        updateSidebarForRole(null);
+        return;
     }
 
+    // Token exists — validate it against the server
+    const userInfo = typeof apiGetCurrentUser === "function" ? await apiGetCurrentUser() : null;
+    if (!userInfo) {
+        // Token invalid or expired
+        if (typeof clearAuthSession === "function") clearAuthSession();
+        switchScreen("screen-login");
+        updateSidebarForRole(null);
+        return;
+    }
 
-    switchScreen("screen-registration");
+    // Token is valid — restore session based on role
+    updateSidebarForRole(role);
+    updateAuthUserBar();
+
+    const storedScreen = sessionStorage.getItem("currentScreen") || "";
+
+    if (role === "PATIENT") {
+        const patientId = typeof getAuthPatientId === "function" ? getAuthPatientId() : null;
+        if (patientId) {
+            try {
+                if (storedScreen === "screen-history") {
+                    const data = await apiGetPatientHistory(patientId);
+                    activePatient = data.patient;
+                    loadedConsultations = data.consultations || [];
+                    enablePatientNavigation();
+                    populateDashboardCard(activePatient);
+                    switchScreen("screen-history");
+                    await renderCaseHistory();
+                } else {
+                    const patient = await apiSearchPatient(patientId);
+                    activePatient = patient;
+                    enablePatientNavigation();
+                    populateDashboardCard(patient);
+                    switchScreen("screen-history");
+                    await renderCaseHistory();
+                }
+                return;
+            } catch (err) {
+                console.warn("Could not restore patient session:", err);
+            }
+        }
+        switchScreen("screen-history");
+        return;
+    }
+
+    if (role === "DOCTOR") {
+        const allowed = ["screen-dashboard", "screen-registration", "screen-history", "screen-consultation"];
+        const targetScreen = allowed.includes(storedScreen) ? storedScreen : "screen-dashboard";
+
+        if (storedScreen === "screen-history" && activePatient) {
+            switchScreen("screen-history");
+            await renderCaseHistory();
+        } else {
+            switchScreen(targetScreen);
+        }
+        return;
+    }
+
+    // Fallback
+    switchScreen("screen-login");
 });
 
 // ============================================================
@@ -119,6 +165,18 @@ function switchScreen(screenId) {
     // they got here (nav click, back button, or page restore).
     if (screenId === "screen-registration") {
         resetRegistrationState();
+    }
+
+    // ── Doctor register: reset to form view ──────────────────────
+    if (screenId === "screen-doctor-register") {
+        const formCard    = document.getElementById("doctor-reg-form-card");
+        const successCard = document.getElementById("doctor-reg-success-card");
+        const regForm     = document.getElementById("doctor-registration-form");
+        if (formCard)    formCard.style.display    = "block";
+        if (successCard) successCard.style.display = "none";
+        if (regForm)     regForm.reset();
+        const errBanner = document.getElementById("doctor-reg-error-banner");
+        if (errBanner)   errBanner.style.display = "none";
     }
 
     document.querySelectorAll(".screen").forEach(screen => {
@@ -147,6 +205,11 @@ function switchScreen(screenId) {
     let navId = "";
 
     switch (screenId) {
+
+        case "screen-login":
+        case "screen-doctor-register":
+            navId = "nav-login";
+            break;
 
         case "screen-registration":
             navId = "nav-registration";
@@ -321,6 +384,12 @@ async function handleRegistration(event) {
     const email =
         (document.getElementById("reg-email")?.value || "").trim() || null;
 
+    const password =
+        (document.getElementById("reg-password")?.value || "").trim();
+
+    const confirmPassword =
+        (document.getElementById("reg-confirm-password")?.value || "").trim();
+
     // Field Validations
     if (!name || isNaN(age) || !gender || !phone) {
         showToast("Please fill in all mandatory fields marked with *.", "danger");
@@ -348,6 +417,20 @@ async function handleRegistration(event) {
         return;
     }
 
+    if (!password || password.length < 6) {
+        showToast("Account password must be at least 6 characters.", "danger");
+        const passInput = document.getElementById("reg-password");
+        if (passInput) passInput.focus();
+        return;
+    }
+
+    if (password !== confirmPassword) {
+        showToast("Passwords do not match. Please re-enter your password.", "danger");
+        const confirmInput = document.getElementById("reg-confirm-password");
+        if (confirmInput) confirmInput.focus();
+        return;
+    }
+
     const patientData = {
         name,
         age,
@@ -355,7 +438,8 @@ async function handleRegistration(event) {
         phone,
         email,
         allergies,
-        conditions
+        conditions,
+        password
     };
 
     const submitBtn = document.querySelector("#patient-registration-form button[type='submit']");
@@ -3463,6 +3547,335 @@ function closeViewDocumentModal() {
     const fileFrame = document.getElementById("view-doc-file-frame");
     if (fileFrame) {
         fileFrame.innerHTML = "";
+    }
+}
+
+
+// ============================================================
+// AUTHENTICATION — UI LAYER (Phase 3)
+// ============================================================
+
+// ── Role tab switcher ──────────────────────────────────────
+
+function switchLoginRole(role) {
+    const patientForm   = document.getElementById("patient-login-form");
+    const doctorForm    = document.getElementById("doctor-login-form");
+    const tabPatient    = document.getElementById("tab-patient-login");
+    const tabDoctor     = document.getElementById("tab-doctor-login");
+    const errorBanner   = document.getElementById("login-error-banner");
+
+    if (errorBanner) errorBanner.style.display = "none";
+
+    if (role === "DOCTOR") {
+        if (patientForm) patientForm.style.display = "none";
+        if (doctorForm)  doctorForm.style.display  = "block";
+        if (tabPatient)  tabPatient.classList.remove("active");
+        if (tabDoctor)   tabDoctor.classList.add("active");
+    } else {
+        if (patientForm) patientForm.style.display = "block";
+        if (doctorForm)  doctorForm.style.display  = "none";
+        if (tabPatient)  tabPatient.classList.add("active");
+        if (tabDoctor)   tabDoctor.classList.remove("active");
+    }
+
+    if (typeof lucide !== "undefined") lucide.createIcons();
+}
+
+// ── Show login error banner ───────────────────────────────
+
+function showLoginError(message) {
+    const banner = document.getElementById("login-error-banner");
+    const text   = document.getElementById("login-error-text");
+    if (banner && text) {
+        text.innerText = message;
+        banner.style.display = "flex";
+    }
+}
+
+function hideLoginError() {
+    const banner = document.getElementById("login-error-banner");
+    if (banner) banner.style.display = "none";
+}
+
+// ── Patient login ─────────────────────────────────────────
+
+async function handlePatientLogin(event) {
+    if (event) event.preventDefault();
+
+    hideLoginError();
+
+    const patientIdInput = document.getElementById("login-patient-id");
+    const passwordInput  = document.getElementById("login-patient-password");
+    const submitBtn      = document.getElementById("btn-patient-login-submit");
+
+    const patientId = (patientIdInput?.value || "").trim().toUpperCase();
+    const password  = (passwordInput?.value  || "").trim();
+
+    if (!patientId || !password) {
+        showLoginError("Please enter your Patient ID and password.");
+        return;
+    }
+
+    if (submitBtn) {
+        submitBtn.disabled    = true;
+        submitBtn.innerHTML   = "<span style='opacity:0.7;'>Signing in…</span>";
+    }
+
+    try {
+        const data = await apiLogin(patientId, password);
+
+        if (!data || data.role !== "PATIENT") {
+            showLoginError("Access denied. This login is for patients only.");
+            return;
+        }
+
+        // Session is stored by apiLogin → setAuthSession
+        updateSidebarForRole("PATIENT");
+        updateAuthUserBar();
+
+        const pid = data.patient_id || patientId;
+        try {
+            const histData = await apiGetPatientHistory(pid);
+            activePatient       = histData.patient;
+            loadedConsultations = histData.consultations || [];
+            enablePatientNavigation();
+            populateDashboardCard(activePatient);
+        } catch (_) {
+            // History load failed — still redirect
+        }
+
+        showToast("Welcome back! Signed in as Patient.", "success");
+        switchScreen("screen-history");
+        if (activePatient) await renderCaseHistory();
+
+    } catch (err) {
+        showLoginError(err.message || "Login failed. Please check your credentials.");
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled  = false;
+            submitBtn.innerHTML = "<i data-lucide='log-in'></i> Log In as Patient";
+            if (typeof lucide !== "undefined") lucide.createIcons();
+        }
+    }
+}
+
+// ── Doctor login ──────────────────────────────────────────
+
+async function handleDoctorLogin(event) {
+    if (event) event.preventDefault();
+
+    hideLoginError();
+
+    const doctorIdInput = document.getElementById("login-doctor-id");
+    const passwordInput = document.getElementById("login-doctor-password");
+    const submitBtn     = document.getElementById("btn-doctor-login-submit");
+
+    const doctorId = (doctorIdInput?.value || "").trim().toUpperCase();
+    const password = (passwordInput?.value  || "").trim();
+
+    if (!doctorId || !password) {
+        showLoginError("Please enter your Doctor ID and password.");
+        return;
+    }
+
+    if (submitBtn) {
+        submitBtn.disabled  = true;
+        submitBtn.innerHTML = "<span style='opacity:0.7;'>Signing in…</span>";
+    }
+
+    try {
+        const data = await apiLogin(doctorId, password);
+
+        if (!data || data.role !== "DOCTOR") {
+            showLoginError("Access denied. This login is for doctors only.");
+            return;
+        }
+
+        updateSidebarForRole("DOCTOR");
+        updateAuthUserBar();
+
+        showToast("Welcome, Doctor! Access granted.", "success");
+        switchScreen("screen-dashboard");
+
+    } catch (err) {
+        showLoginError(err.message || "Login failed. Please check your credentials.");
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled  = false;
+            submitBtn.innerHTML = "<i data-lucide='log-in'></i> Log In as Doctor";
+            if (typeof lucide !== "undefined") lucide.createIcons();
+        }
+    }
+}
+
+// ── Doctor registration ───────────────────────────────────
+
+async function handleDoctorRegistration(event) {
+    if (event) event.preventDefault();
+
+    const errorBanner = document.getElementById("doctor-reg-error-banner");
+    const errorText   = document.getElementById("doctor-reg-error-text");
+    const submitBtn   = document.getElementById("btn-doctor-reg-submit");
+
+    const hideError = () => { if (errorBanner) errorBanner.style.display = "none"; };
+    const showError = (msg) => {
+        if (errorBanner && errorText) {
+            errorText.innerText = msg;
+            errorBanner.style.display = "flex";
+        }
+    };
+
+    hideError();
+
+    const doctorId       = (document.getElementById("doc-reg-id")?.value               || "").trim().toUpperCase();
+    const password       = (document.getElementById("doc-reg-password")?.value          || "").trim();
+    const confirmPwd     = (document.getElementById("doc-reg-confirm-password")?.value  || "").trim();
+
+    if (!doctorId) {
+        showError("Doctor ID is required.");
+        return;
+    }
+    if (!password || password.length < 6) {
+        showError("Password must be at least 6 characters long.");
+        return;
+    }
+    if (password !== confirmPwd) {
+        showError("Passwords do not match. Please re-enter your password.");
+        return;
+    }
+
+    if (submitBtn) {
+        submitBtn.disabled  = true;
+        submitBtn.innerHTML = "<span style='opacity:0.7;'>Registering…</span>";
+    }
+
+    try {
+        const result = await apiRegisterDoctor({
+            doctor_id: doctorId,
+            password:  password
+        });
+
+        // Show success card
+        const formCard    = document.getElementById("doctor-reg-form-card");
+        const successCard = document.getElementById("doctor-reg-success-card");
+        const successId   = document.getElementById("success-doctor-id");
+
+        if (formCard)    formCard.style.display    = "none";
+        if (successCard) successCard.style.display = "block";
+        if (successId)   successId.innerText       = result.doctor_id || doctorId;
+
+        if (typeof lucide !== "undefined") lucide.createIcons();
+
+    } catch (err) {
+        showError(err.message || "Registration failed. Please try again.");
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled  = false;
+            submitBtn.innerHTML = "<i data-lucide='user-check'></i> Register Doctor Account";
+            if (typeof lucide !== "undefined") lucide.createIcons();
+        }
+    }
+}
+
+// ── Logout ────────────────────────────────────────────────
+
+function handleLogout() {
+    if (typeof clearAuthSession === "function") clearAuthSession();
+    sessionStorage.removeItem("activePatientId");
+    sessionStorage.removeItem("currentScreen");
+
+    activePatient       = null;
+    loadedConsultations = [];
+    loadedDocuments     = [];
+
+    disablePatientNavigation();
+    updateSidebarForRole(null);
+
+    // Reset user bar
+    const bar = document.getElementById("auth-user-bar");
+    if (bar) bar.style.display = "none";
+
+    showToast("You have been signed out.", "success");
+    switchLoginRole("PATIENT");
+    switchScreen("screen-login");
+}
+
+// ── Password show/hide toggle ─────────────────────────────
+
+function togglePasswordVisibility(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+
+    const isHidden = input.type === "password";
+    input.type = isHidden ? "text" : "password";
+
+    if (btn) {
+        btn.innerHTML = isHidden
+            ? "<i data-lucide='eye-off' style='width:18px;height:18px;'></i>"
+            : "<i data-lucide='eye'    style='width:18px;height:18px;'></i>";
+        if (typeof lucide !== "undefined") lucide.createIcons();
+    }
+}
+
+// ── Sidebar visibility based on role ─────────────────────
+
+function updateSidebarForRole(role) {
+    const navLogin        = document.getElementById("nav-login");
+    const navDashboard    = document.getElementById("nav-dashboard");
+    const navRegistration = document.getElementById("nav-registration");
+    const navHistory      = document.getElementById("nav-history");
+    const navConsultation = document.getElementById("nav-consultation");
+    const navLogout       = document.getElementById("nav-logout");
+
+    // Helper — show/hide sidebar items
+    const show = (el) => { if (el) el.style.display = ""; };
+    const hide = (el) => { if (el) el.style.display = "none"; };
+
+    if (!role) {
+        // Unauthenticated — show only Sign In
+        show(navLogin);
+        hide(navDashboard);
+        hide(navRegistration);
+        hide(navHistory);
+        hide(navConsultation);
+        hide(navLogout);
+        return;
+    }
+
+    // Authenticated — hide Sign In, show Logout
+    hide(navLogin);
+    show(navLogout);
+
+    if (role === "DOCTOR") {
+        show(navDashboard);
+        show(navRegistration);
+        show(navHistory);
+        show(navConsultation);
+    } else if (role === "PATIENT") {
+        // Patients only see their own case history
+        hide(navDashboard);
+        hide(navRegistration);
+        show(navHistory);
+        hide(navConsultation);    // Patients cannot add consultations
+    }
+}
+
+// ── Auth user bar in header ───────────────────────────────
+
+function updateAuthUserBar() {
+    const bar      = document.getElementById("auth-user-bar");
+    const nameSpan = document.getElementById("auth-user-name");
+
+    if (!bar) return;
+
+    const username = typeof getAuthUsername === "function" ? getAuthUsername() : null;
+    const role     = typeof getAuthRole     === "function" ? getAuthRole()     : null;
+
+    if (username && role) {
+        bar.style.display = "flex";
+        if (nameSpan) nameSpan.innerText = `${username} (${role})`;
+    } else {
+        bar.style.display = "none";
     }
 }
 

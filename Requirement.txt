@@ -7,4 +7,6 @@ pydantic-settings
 qrcode
 pillow
 python-dotenv
+bcrypt
+pyjwt
 

@@ -2,7 +2,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import patient, interview, doctor, report
+from app.api import patient, interview, doctor, report, auth
 
 # Configure logging
 logging.basicConfig(
@@ -22,6 +22,12 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(
+    auth.router,
+    prefix="/api/auth",
+    tags=["auth"]
+)
+
 app.include_router(
     patient.router,
     prefix="/api/patient",

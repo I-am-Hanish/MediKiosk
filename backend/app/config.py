@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     smtp_password: str = os.getenv('SMTP_PASSWORD', '')
     smtp_from_email: str = os.getenv('SMTP_FROM_EMAIL', '')
 
+    # JWT Authentication Configuration
+    jwt_secret_key: str = os.getenv(
+        'JWT_SECRET_KEY',
+        'medikiosk-production-super-secret-key-2026-jwt-secure-token-change-in-env'
+    )
+    jwt_algorithm: str = os.getenv('JWT_ALGORITHM', 'HS256')
+    access_token_expire_minutes: int = int(os.getenv('ACCESS_TOKEN_EXPIRE_MINUTES', '1440'))
+
     class Config:
         extra = 'ignore'
 

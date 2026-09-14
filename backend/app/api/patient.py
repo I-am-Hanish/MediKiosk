@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, Response, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -7,7 +7,16 @@ from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 from app.database import get_db
-from app.database.models import Patient, Consultation, MedicalDocument
+from app.database.models import Patient, Consultation, MedicalDocument, User
+from app.core.security import hash_password
+from app.core.dependencies import (
+    require_authenticated_user,
+    require_doctor,
+    require_patient,
+    require_patient_access,
+    check_patient_access,
+    AuthenticatedUser
+)
 from datetime import datetime
 import re
 import os
@@ -32,6 +41,7 @@ class PatientCreate(BaseModel):
     email: Optional[str] = None          # Optional — used for QR report delivery
     allergies: Optional[str] = "None"
     conditions: Optional[str] = "None"
+    password: Optional[str] = None       # Optional — creates user account if provided
 
     @field_validator("email")
     @classmethod
@@ -218,6 +228,21 @@ async def register_patient(
                 await db.commit()
                 await db.refresh(existing_patient)
 
+            # If password provided and existing patient has no account yet, create it
+            if patient_data.password and patient_data.password.strip():
+                user_res = await db.execute(
+                    select(User).where(User.patient_id == existing_patient.id)
+                )
+                if not user_res.scalars().first():
+                    new_user = User(
+                        username=existing_patient.id,
+                        password_hash=hash_password(patient_data.password.strip()),
+                        role="PATIENT",
+                        patient_id=existing_patient.id
+                    )
+                    db.add(new_user)
+                    await db.commit()
+
             consultation_dicts = [
                 {
                     "date": c.date,
@@ -306,6 +331,18 @@ async def register_patient(
         )
 
         db.add(new_patient)
+        await db.flush()
+
+        # If password is provided, securely create linked User authentication record
+        if patient_data.password and patient_data.password.strip():
+            new_user = User(
+                username=candidate_id,
+                password_hash=hash_password(patient_data.password.strip()),
+                role="PATIENT",
+                patient_id=candidate_id
+            )
+            db.add(new_user)
+
         await db.commit()
         await db.refresh(new_patient)
 
@@ -384,10 +421,28 @@ async def get_patient_qr(patient_id: str):
 
 
 @router.get("/search")
-async def search_patient(id: str = Query(...), db: AsyncSession = Depends(get_db)):
+async def search_patient(
+    id: str = Query(...),
+    current_user: AuthenticatedUser = Depends(require_authenticated_user),
+    db: AsyncSession = Depends(get_db)
+):
     search_val = id.strip()
     if not search_val:
         raise HTTPException(status_code=400, detail="Search term cannot be empty.")
+
+    # Role-based authorization
+    if current_user.is_patient():
+        user_pid = (current_user.patient_id or current_user.username or "").strip().upper()
+        if search_val.upper() != user_pid:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: Patients are not permitted to search other patient records."
+            )
+    elif not current_user.is_doctor():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Insufficient permissions."
+        )
 
     # Search by exact ID (case-insensitive)
     patient = await db.get(Patient, search_val.upper())
@@ -416,7 +471,11 @@ async def search_patient(id: str = Query(...), db: AsyncSession = Depends(get_db
     }
 
 @router.get("/{patient_id}/history")
-async def get_patient_history(patient_id: str, db: AsyncSession = Depends(get_db)):
+async def get_patient_history(
+    patient_id: str,
+    current_user: AuthenticatedUser = Depends(require_patient_access),
+    db: AsyncSession = Depends(get_db)
+):
     patient = await db.get(Patient, patient_id.strip().upper())
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found.")
@@ -495,7 +554,11 @@ async def get_patient_history(patient_id: str, db: AsyncSession = Depends(get_db
 
 
 @router.post("/consultation")
-async def add_consultation(data: ConsultationCreate, db: AsyncSession = Depends(get_db)):
+async def add_consultation(
+    data: ConsultationCreate,
+    current_user: AuthenticatedUser = Depends(require_doctor),
+    db: AsyncSession = Depends(get_db)
+):
     patient = await db.get(Patient, data.patient_id.strip().upper())
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found.")
@@ -536,7 +599,10 @@ async def add_consultation(data: ConsultationCreate, db: AsyncSession = Depends(
 
 @router.put("/consultation/{consultation_id}")
 @router.patch("/consultation/{consultation_id}")
-async def update_consultation(consultation_id: int):
+async def update_consultation(
+    consultation_id: int,
+    current_user: AuthenticatedUser = Depends(require_doctor)
+):
     raise HTTPException(
         status_code=403,
         detail="Prescription history is immutable. Previous prescriptions cannot be edited or overwritten. Please create a new prescription."
@@ -551,6 +617,7 @@ async def update_consultation(consultation_id: int):
 async def upload_patient_document(
     patient_id: str,
     data: DocumentUploadRequest,
+    current_user: AuthenticatedUser = Depends(require_patient_access),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -658,7 +725,11 @@ async def upload_patient_document(
 
 
 @router.get("/{patient_id}/documents")
-async def get_patient_documents(patient_id: str, db: AsyncSession = Depends(get_db)):
+async def get_patient_documents(
+    patient_id: str,
+    current_user: AuthenticatedUser = Depends(require_patient_access),
+    db: AsyncSession = Depends(get_db)
+):
     """
     Retrieve all medical documents belonging to the specified Patient ID.
     Strictly queries only the requested patient's documents for patient safety.
@@ -702,7 +773,11 @@ async def get_patient_documents(patient_id: str, db: AsyncSession = Depends(get_
 
 
 @router.get("/document/{document_id}/file")
-async def get_document_file(document_id: int, db: AsyncSession = Depends(get_db)):
+async def get_document_file(
+    document_id: int,
+    current_user: AuthenticatedUser = Depends(require_authenticated_user),
+    db: AsyncSession = Depends(get_db)
+):
     """
     Serve the original uploaded medical document file for viewing and verification.
     Sets inline Content-Disposition so browsers can open PDFs and images directly.
@@ -710,6 +785,9 @@ async def get_document_file(document_id: int, db: AsyncSession = Depends(get_db)
     doc = await db.get(MedicalDocument, document_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found.")
+
+    # Enforce role-based document access control
+    check_patient_access(current_user, doc.patient_id)
 
     if not os.path.exists(doc.file_path):
         raise HTTPException(status_code=404, detail="Document file not found on disk.")
