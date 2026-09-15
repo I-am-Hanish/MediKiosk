@@ -10,4 +10,5 @@ qrcode
 pillow
 bcrypt
 pyjwt
+httpx
 

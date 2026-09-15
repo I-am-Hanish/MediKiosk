@@ -22,6 +22,7 @@ import re
 import os
 import base64
 from app.services.email_service import send_patient_id_email, send_report_email, generate_qr_bytes, mask_email
+from app.services.storage import upload_medical_document, download_medical_document, delete_medical_document
 
 router = APIRouter()
 
@@ -658,14 +659,13 @@ async def upload_patient_document(
     # Generate unique, safe filename
     clean_filename = re.sub(r"[^a-zA-Z0-9_.-]", "_", data.file_name.strip()) or "document.bin"
     timestamp_str = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    unique_file_name = f"{clean_id}_{timestamp_str}_{clean_filename}"
-    saved_file_path = os.path.join(UPLOADS_DIR, unique_file_name)
-
-    try:
-        with open(saved_file_path, "wb") as f:
-            f.write(file_bytes)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to write document file to disk: {str(e)}")
+    # Upload file safely (to private Supabase Storage if configured, or local disk fallback)
+    saved_file_path = await upload_medical_document(
+        patient_id=clean_id,
+        file_name=clean_filename,
+        file_bytes=file_bytes,
+        mime_type=mime_type
+    )
 
     # Create new database record
     new_doc = MedicalDocument(
@@ -693,11 +693,7 @@ async def upload_patient_document(
     except Exception as e:
         await db.rollback()
         # Clean up saved file on rollback
-        if os.path.exists(saved_file_path):
-            try:
-                os.remove(saved_file_path)
-            except Exception:
-                pass
+        await delete_medical_document(saved_file_path)
         raise HTTPException(status_code=500, detail=f"Database error while saving document: {str(e)}")
 
     return {
@@ -780,6 +776,7 @@ async def get_document_file(
 ):
     """
     Serve the original uploaded medical document file for viewing and verification.
+    Supports both private Supabase Storage objects and local files.
     Sets inline Content-Disposition so browsers can open PDFs and images directly.
     """
     doc = await db.get(MedicalDocument, document_id)
@@ -789,10 +786,27 @@ async def get_document_file(
     # Enforce role-based document access control
     check_patient_access(current_user, doc.patient_id)
 
+    media_type = doc.file_type or "application/octet-stream"
+
+    # Cloud Storage (Supabase) retrieval
+    if doc.file_path.startswith("supabase://"):
+        file_bytes, detected_mime = await download_medical_document(
+            doc.file_path,
+            fallback_mime=media_type
+        )
+        return Response(
+            content=file_bytes,
+            media_type=detected_mime or media_type,
+            headers={
+                "Content-Disposition": f'inline; filename="{doc.file_name}"',
+                "Cache-Control": "private, max-age=3600"
+            }
+        )
+
+    # Local filesystem retrieval (legacy / SQLite mode)
     if not os.path.exists(doc.file_path):
         raise HTTPException(status_code=404, detail="Document file not found on disk.")
 
-    media_type = doc.file_type or "application/octet-stream"
     return FileResponse(
         path=doc.file_path,
         media_type=media_type,
@@ -802,5 +816,6 @@ async def get_document_file(
             "Cache-Control": "private, max-age=3600"
         }
     )
+
 
 
