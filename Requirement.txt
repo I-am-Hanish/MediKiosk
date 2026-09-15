@@ -1,12 +1,1 @@
-fastapi
-uvicorn[standard]
-aiosqlite
-sqlalchemy
-pydantic
-pydantic-settings
-qrcode
-pillow
-python-dotenv
-bcrypt
-pyjwt
-
+fastapi\r\nuvicorn[standard]\r\naiosqlite\r\nasyncpg\r\nsqlalchemy\r\npydantic\r\npydantic-settings\r\nqrcode\r\npillow\r\npython-dotenv\r\nbcrypt\r\npyjwt\r\n

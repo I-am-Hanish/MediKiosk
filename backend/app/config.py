@@ -34,9 +34,28 @@ if not env_loaded:
     load_dotenv(override=True)
 
 
+def _normalize_database_url(url: str) -> str:
+    """
+    Normalize the DATABASE_URL for SQLAlchemy async compatibility.
+
+    Supabase and most cloud providers expose connection strings with the
+    bare 'postgresql://' or 'postgres://' scheme. SQLAlchemy's async engine
+    requires 'postgresql+asyncpg://' to select the correct DBAPI driver.
+
+    SQLite URLs ('sqlite+aiosqlite://...') are returned unchanged.
+    """
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+asyncpg://", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
+
+
 class Settings(BaseSettings):
     demo_mode: bool = os.getenv('DEMO_MODE', 'false').lower() == 'true'
-    database_url: str = os.getenv('DATABASE_URL', 'sqlite+aiosqlite:///./medikiosk.db')
+    database_url: str = _normalize_database_url(
+        os.getenv('DATABASE_URL', 'sqlite+aiosqlite:///./medikiosk.db')
+    )
 
     # SMTP Configuration (Gmail SMTP)
     smtp_server: str = os.getenv('SMTP_SERVER', os.getenv('SMTP_HOST', 'smtp.gmail.com'))
@@ -58,7 +77,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-
-
-
-
